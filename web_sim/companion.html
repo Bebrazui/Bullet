@@ -290,8 +290,11 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
       if (!name || !name.trim()) return;
       fetch('/api/files/mkdir?path=' + encodeURIComponent(currentDir) + '&name=' + encodeURIComponent(name.trim()))
         .then(r => r.json())
-        .then(() => fetchFiles(currentDir))
-        .catch(e => alert('Ошибка создания папки'));
+        .then(d => {
+          if (d.error) alert('Ошибка создания папки: ' + d.error);
+          fetchFiles(currentDir);
+        })
+        .catch(e => alert('Ошибка создания папки: ' + e));
     }
 
     function fetchFiles(dir) {
@@ -303,7 +306,7 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
       fetch('/api/files/list?path=' + encodeURIComponent(currentDir))
         .then(r => r.json())
         .then(data => {
-          const items = data.items || [];
+          let items = Array.isArray(data) ? data : (data.items || []);
           document.getElementById('dir-count').textContent = items.length + ' эл.';
           if (items.length === 0) {
             listEl.innerHTML = '<div style="color:var(--muted); padding:12px 0;">Папка пуста. Загрузите файл или создайте подпапку.</div>';
@@ -311,19 +314,21 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
           }
           let html = '';
           for (let item of items) {
-            if (item.isDir) {
+            const isDir = item.isDir || item.type === 'dir';
+            const itemPath = item.path || (currentDir === '/' ? '/' + item.name : currentDir + '/' + item.name);
+            if (isDir) {
               html += '<div class="file-row">' +
-                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="cdPath(\'' + item.path + '\')">' +
+                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="cdPath(\'' + itemPath + '\')">' +
                   '<span style="font-size:18px;">📁</span>' +
                   '<div><div class="f-title" style="color:var(--cyan);">' + item.name + '</div><div class="f-info">Каталог</div></div>' +
                 '</div>' +
                 '<div class="f-btns">' +
-                  '<button class="f-btn" onclick="cdPath(\'' + item.path + '\')">Открыть ➔</button>' +
-                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + item.path + '\')">🗑</button>' +
+                  '<button class="f-btn" onclick="cdPath(\'' + itemPath + '\')">Открыть ➔</button>' +
+                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + itemPath + '\')">🗑</button>' +
                 '</div>' +
               '</div>';
             } else {
-              const sizeStr = (item.size / 1024).toFixed(1) + ' KB';
+              const sizeStr = ((item.size || 0) / 1024).toFixed(1) + ' KB';
               let icon = '📄';
               if (item.name.endsWith('.pcap')) icon = '📡';
               else if (item.name.endsWith('.sub') || item.name.endsWith('.raw')) icon = '📻';
@@ -331,14 +336,14 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
               else if (item.name.endsWith('.log')) icon = '📝';
 
               html += '<div class="file-row">' +
-                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="readFileContent(\'' + item.path + '\')">' +
+                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="readFileContent(\'' + itemPath + '\')">' +
                   '<span style="font-size:18px;">' + icon + '</span>' +
                   '<div><div class="f-title">' + item.name + '</div><div class="f-info">' + sizeStr + ' &bullet; ' + (item.type || '').toUpperCase() + '</div></div>' +
                 '</div>' +
                 '<div class="f-btns">' +
-                  '<button class="f-btn" onclick="readFileContent(\'' + item.path + '\')">👁 Читать</button>' +
-                  '<a class="f-btn" href="/api/files/download?path=' + encodeURIComponent(item.path) + '" download>⬇</a>' +
-                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + item.path + '\')">🗑</button>' +
+                  '<button class="f-btn" onclick="readFileContent(\'' + itemPath + '\')">👁 Читать</button>' +
+                  '<a class="f-btn" href="/api/files/download?path=' + encodeURIComponent(itemPath) + '" download>⬇</a>' +
+                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + itemPath + '\')">🗑</button>' +
                 '</div>' +
               '</div>';
             }

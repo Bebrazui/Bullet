@@ -611,6 +611,22 @@
         return;
       }
 
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (Module._oled_tab_autocomplete) Module._oled_tab_autocomplete();
+        else Module._oled_char_input(9);
+        return;
+      }
+
+      // If typing printable characters
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        // If not special gaming keys (or if user is in terminal), forward char
+        if (e.key >= '0' && e.key <= '9') {
+          Module._oled_char_input(e.key.charCodeAt(0));
+          return;
+        }
+      }
+
       if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
         e.preventDefault();
         turnKnob(0); // Duck in Dino, CCW in menu
@@ -623,15 +639,22 @@
       } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
         e.preventDefault();
         turnKnob(1);
-      } else if (e.key === "Enter" || e.key === " ") {
+      } else if (e.key === "Enter") {
         e.preventDefault();
         pressButton(0);
-      } else if (e.key === "Escape" || e.key === "Backspace") {
+      } else if (e.key === " ") {
+        e.preventDefault();
+        pressButton(0);
+      } else if (e.key === "Escape") {
         e.preventDefault();
         pressButton(2);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        if (Module._oled_backspace) Module._oled_backspace();
+        else pressButton(2);
       } else if (e.key === "q" || e.key === "Q") {
         pressButton(1); // 2x click
-      } else if (e.key >= "1" && e.key <= "6") {
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
         Module._oled_char_input(e.key.charCodeAt(0));
       }
     });

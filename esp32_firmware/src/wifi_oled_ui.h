@@ -106,6 +106,7 @@ void oled_key(int key);
 void oled_char_input(int char_code);
 void oled_backspace(void);
 void oled_enter(void);
+void oled_tab_autocomplete(void);
 
 // Real Hardware Data Feeders
 void wifi_ui_clear_networks(void);

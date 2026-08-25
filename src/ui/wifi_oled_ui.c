@@ -684,62 +684,76 @@ static void c_draw_text(int x, int y, const char* str, uint32_t color) {
 }
 
 static void c_draw_icon_ips(int x, int y, int icon_type, uint32_t color) {
-    if (icon_type == 0) { // WiFi
+    if (icon_type == 0) { // 0. Wi-Fi Manager
         c_draw_circle(x + 7, y + 10, 2, color);
         c_draw_circle(x + 7, y + 10, 6, color);
         c_draw_circle(x + 7, y + 10, 10, color);
-    } else if (icon_type == 1) { // Deauth IDS (Shield / Skull)
+    } else if (icon_type == 1) { // 1. Attack Detector (Shield)
         c_draw_rect_outline(x + 2, y + 2, 10, 11, IPS_ACCENT_ROSE);
         c_draw_line(x + 4, y + 7, x + 10, y + 7, IPS_ACCENT_ROSE);
         c_draw_line(x + 7, y + 4, x + 7, y + 10, IPS_ACCENT_ROSE);
-    } else if (icon_type == 2) { // Probe Sniffer (Footprint / Target)
+    } else if (icon_type == 2) { // 2. Probe Sniffer (Target)
         c_draw_circle(x + 7, y + 7, 5, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 7, y + 7, 0xFFFFFFFF);
-    } else if (icon_type == 3) { // Matrix Cyber-HUD
+    } else if (icon_type == 3) { // 3. Matrix Rain
         c_draw_text(x + 1, y + 3, "01", IPS_ACCENT_EMERALD);
-    } else if (icon_type == 4) { // RF Sniffer
+    } else if (icon_type == 4) { // 4. RF 2.4G Monitor
         c_draw_rect_fill(x + 1, y + 8, 2, 6, color);
         c_draw_rect_fill(x + 4, y + 5, 2, 9, color);
         c_draw_rect_fill(x + 7, y + 2, 2, 12, color);
-    } else if (icon_type == 5) { // BLE Radar
+    } else if (icon_type == 5) { // 5. BLE Radar
         c_draw_circle(x + 7, y + 7, 6, color);
         c_draw_pixel(x + 7, y + 7, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 6) { // FFT Spectrum
+    } else if (icon_type == 6) { // 6. Audio Spectrum
         c_draw_rect_fill(x + 2, y + 3, 3, 10, IPS_ACCENT_GLACIER);
         c_draw_rect_fill(x + 6, y + 6, 3, 7, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 10, y + 1, 3, 12, IPS_ACCENT_AMBER);
-    } else if (icon_type == 7) { // CyberKart Turbo (Racing Car)
+    } else if (icon_type == 7) { // 7. Retro Kart
         c_draw_rect_fill(x + 4, y + 2, 6, 10, color);
         c_draw_rect_fill(x + 2, y + 5, 10, 4, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 2, y + 3, 0xFFFFFFFF);
         c_draw_pixel(x + 11, y + 3, 0xFFFFFFFF);
         c_draw_pixel(x + 2, y + 10, 0xFFFFFFFF);
         c_draw_pixel(x + 11, y + 10, 0xFFFFFFFF);
-    } else if (icon_type == 8) { // Chrome Dino (T-Rex)
+    } else if (icon_type == 8) { // 8. Chrome Dino
         c_draw_rect_fill(x + 6, y + 2, 7, 5, color);
         c_draw_pixel(x + 8, y + 3, COLOR_BLACK);
         c_draw_rect_fill(x + 4, y + 6, 6, 5, color);
         c_draw_rect_fill(x + 2, y + 7, 3, 3, color);
         c_draw_rect_fill(x + 5, y + 11, 2, 3, color);
         c_draw_rect_fill(x + 8, y + 11, 2, 3, color);
-    } else if (icon_type == 9) { // Pong Arcade
+    } else if (icon_type == 9) { // 9. Retro Pong
         c_draw_rect_fill(x + 1, y + 3, 2, 8, color);
         c_draw_rect_fill(x + 11, y + 5, 2, 8, color);
         c_draw_pixel(x + 6, y + 7, IPS_ACCENT_GLACIER);
-    } else if (icon_type == 10) { // System Dashboard
+    } else if (icon_type == 10) { // 10. System Specs
         c_draw_rect_outline(x + 2, y + 2, 10, 10, color);
         c_draw_rect_fill(x + 4, y + 4, 6, 6, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 11) { // Device Scanner (Chip with Pins)
+    } else if (icon_type == 11) { // 11. Device Scanner
         c_draw_rect_fill(x + 3, y + 3, 8, 8, color);
         c_draw_rect_fill(x + 1, y + 4, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 1, y + 8, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 11, y + 4, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 11, y + 8, 2, 2, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 12) { // Terminal
+    } else if (icon_type == 12) { // 12. Sub-GHz RF (Antenna with Radio Waves)
+        c_draw_line(x + 7, y + 3, x + 7, y + 12, color);
+        c_draw_line(x + 4, y + 3, x + 10, y + 3, color);
+        c_draw_pixel(x + 2, y + 2, IPS_ACCENT_AMBER);
+        c_draw_pixel(x + 12, y + 2, IPS_ACCENT_AMBER);
+        c_draw_pixel(x + 7, y + 1, 0xFFFFFFFF);
+    } else if (icon_type == 13) { // 13. Micro-ADB (Android Robot Head)
+        c_draw_rect_fill(x + 3, y + 5, 8, 7, color);
+        c_draw_pixel(x + 4, y + 7, COLOR_BLACK);
+        c_draw_pixel(x + 9, y + 7, COLOR_BLACK);
+        c_draw_line(x + 3, y + 2, x + 4, y + 4, IPS_ACCENT_EMERALD);
+        c_draw_line(x + 10, y + 2, x + 9, y + 4, IPS_ACCENT_EMERALD);
+    } else if (icon_type == 14) { // 14. CLI Terminal
         c_draw_text(x, y + 3, ">_", color);
-    } else if (icon_type == 13) { // Settings
-        c_draw_rect_outline(x + 1, y + 2, 12, 8, color);
-    } else if (icon_type == 14) { // Reboot
+    } else if (icon_type == 15) { // 15. Settings (Gear / Sliders)
+        c_draw_rect_outline(x + 2, y + 3, 10, 8, color);
+        c_draw_rect_fill(x + 4, y + 5, 2, 4, IPS_ACCENT_GLACIER);
+        c_draw_rect_fill(x + 8, y + 5, 2, 4, IPS_ACCENT_AMBER);
+    } else if (icon_type == 16) { // 16. Reboot Device (Power symbol)
         c_draw_circle(x + 7, y + 7, 5, color);
         c_draw_rect_fill(x + 6, y + 1, 2, 6, color);
     }
@@ -2770,7 +2784,27 @@ static void c_render_adb_app_view(void) {
     }
 }
 
-// 9. LINUX CLI TERMINAL VIEW
+// 9. LINUX CLI TERMINAL VIEW & AUTO-SUGGESTIONS
+static const char* g_cli_commands[] = {
+    "help", "pcap start", "pcap stop", "pcap status", "pcap clear",
+    "subghz rx", "subghz tx", "subghz list", "subghz scan",
+    "adb connect", "adb devices", "adb shell", "adb key", "adb reboot",
+    "wifi scan", "wifi ap", "wifi status", "rf spec", "rf sniff", "ids", "probe",
+    "neofetch", "hw scan", "devices", "sensors", "ble radar",
+    "matrix", "kart", "dino", "pong", "uname -a", "free -m", "df -h", "dmesg", "clear", "reboot"
+};
+#define CLI_COMMANDS_COUNT (sizeof(g_cli_commands) / sizeof(g_cli_commands[0]))
+
+static const char* term_get_autocomplete_suggestion(void) {
+    if (g_input_len == 0) return NULL;
+    for (size_t i = 0; i < CLI_COMMANDS_COUNT; i++) {
+        if (strncmp(g_cli_commands[i], g_input_buf, g_input_len) == 0) {
+            return g_cli_commands[i];
+        }
+    }
+    return NULL;
+}
+
 static void term_print(const char* text) {
     int max_lines = (g_disp_mode != DISP_MODE_OLED_128x64) ? ((g_disp_h - 50) / 12) : 6;
     if (max_lines < 6) max_lines = 6;
@@ -3303,11 +3337,33 @@ static void c_render_terminal_view(void) {
             c_draw_text(10, log_y_start + (i - start_idx) * step, line, col);
         }
 
+        // Check for Auto-Suggestion
+        const char* suggestion = term_get_autocomplete_suggestion();
+        if (suggestion && g_input_len > 0) {
+            // Suggestion Badge above Input Prompt
+            char hint_badge[48];
+            snprintf(hint_badge, sizeof(hint_badge), "[TAB] %s", suggestion);
+            c_draw_rounded_card(12, g_disp_h - 40, 180, 15, 3, 0xEE140D08, IPS_ACCENT_GLACIER);
+            c_draw_text(16, g_disp_h - 36, hint_badge, IPS_ACCENT_GLACIER);
+        }
+
         // Bottom Input Prompt
         c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_CARD_BG);
         char prompt[48];
-        snprintf(prompt, sizeof(prompt), "# %s%s", g_input_buf, ((g_engine.tick / 30) % 2 == 0) ? "_" : " ");
+        snprintf(prompt, sizeof(prompt), "# %s", g_input_buf);
         c_draw_text(12, g_disp_h - 15, prompt, IPS_ACCENT_GLACIER);
+
+        int input_pixel_w = 12 + (int)strlen(prompt) * 6;
+        if (suggestion && g_input_len > 0 && strlen(suggestion) > (size_t)g_input_len) {
+            // Render Ghost Text
+            const char* ghost = suggestion + g_input_len;
+            c_draw_text(input_pixel_w, g_disp_h - 15, ghost, IPS_TEXT_MUTED);
+        }
+
+        // Cursor
+        if ((g_engine.tick / 30) % 2 == 0) {
+            c_draw_text(input_pixel_w, g_disp_h - 15, "_", IPS_ACCENT_EMERALD);
+        }
     } else {
         // OLED 128x64 Mode
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
@@ -3348,10 +3404,18 @@ static void c_render_terminal_view(void) {
             }
         }
 
+        const char* suggestion = term_get_autocomplete_suggestion();
         c_draw_rect_fill(0, 55, OLED_W, 9, 0xFF111111);
         char prompt[36];
-        snprintf(prompt, sizeof(prompt), "# %s%s", g_input_buf, ((g_engine.tick / 30) % 2 == 0) ? "_" : " ");
+        snprintf(prompt, sizeof(prompt), "# %s", g_input_buf);
         c_draw_text(2, 56, prompt, g_active_color);
+        int input_pixel_w = 2 + (int)strlen(prompt) * 6;
+        if (suggestion && g_input_len > 0 && strlen(suggestion) > (size_t)g_input_len && input_pixel_w < OLED_W - 12) {
+            c_draw_text(input_pixel_w, 56, suggestion + g_input_len, COLOR_OLED_WHITE);
+        }
+        if ((g_engine.tick / 30) % 2 == 0) {
+            c_draw_text(input_pixel_w, 56, "_", g_active_color);
+        }
     }
 }
 
@@ -4417,11 +4481,32 @@ EXPORT void oled_key(int key) {
 EXPORT void oled_char_input(int char_code) {
     if (g_engine.view != OLED_VIEW_TERMINAL) return;
 
+    // TAB Key Autocomplete (char code 9 or '\t')
+    if (char_code == 9 || char_code == '\t') {
+        const char* suggestion = term_get_autocomplete_suggestion();
+        if (suggestion) {
+            strncpy(g_input_buf, suggestion, sizeof(g_input_buf) - 1);
+            g_input_buf[sizeof(g_input_buf) - 1] = '\0';
+            g_input_len = (int)strlen(g_input_buf);
+        }
+        return;
+    }
+
     if (char_code >= 32 && char_code <= 126) {
         if (g_input_len < (int)sizeof(g_input_buf) - 2) {
             g_input_buf[g_input_len++] = (char)char_code;
             g_input_buf[g_input_len] = '\0';
         }
+    }
+}
+
+EXPORT void oled_tab_autocomplete(void) {
+    if (g_engine.view != OLED_VIEW_TERMINAL) return;
+    const char* suggestion = term_get_autocomplete_suggestion();
+    if (suggestion) {
+        strncpy(g_input_buf, suggestion, sizeof(g_input_buf) - 1);
+        g_input_buf[sizeof(g_input_buf) - 1] = '\0';
+        g_input_len = (int)strlen(g_input_buf);
     }
 }
 

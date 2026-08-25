@@ -136,6 +136,10 @@ void wifi_ui_adb_trigger_action(int action_idx);
 void wifi_ui_set_cc1101_detected(bool detected);
 bool wifi_ui_get_cc1101_detected(void);
 void wifi_ui_set_hw_device_detected(int dev_idx, bool detected);
+void wifi_ui_init_ap_password(void);
+const char* wifi_ui_get_ap_password(void);
+void wifi_ui_set_ap_password(const char* pass);
+void wifi_ui_regenerate_ap_password(void);
 
 #ifdef __cplusplus
 }

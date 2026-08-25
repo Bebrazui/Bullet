@@ -342,6 +342,37 @@ static oled_c_engine_t g_engine = {
     .tick = 0
 };
 
+static char g_ap_password[16] = "bullet9x";
+
+EXPORT void wifi_ui_init_ap_password(void) {
+    if (strcmp(g_ap_password, "bullet9x") == 0) {
+        const char charset[] = "23456789abcdefghjkmnpqrstuvwxyz";
+        for (int i = 0; i < 8; i++) {
+            g_ap_password[i] = charset[rand() % (sizeof(charset) - 1)];
+        }
+        g_ap_password[8] = '\0';
+    }
+}
+
+EXPORT const char* wifi_ui_get_ap_password(void) {
+    return g_ap_password;
+}
+
+EXPORT void wifi_ui_set_ap_password(const char* pass) {
+    if (pass && strlen(pass) > 0) {
+        strncpy(g_ap_password, pass, sizeof(g_ap_password) - 1);
+        g_ap_password[sizeof(g_ap_password) - 1] = '\0';
+    }
+}
+
+EXPORT void wifi_ui_regenerate_ap_password(void) {
+    const char charset[] = "23456789abcdefghjkmnpqrstuvwxyz";
+    for (int i = 0; i < 8; i++) {
+        g_ap_password[i] = charset[rand() % (sizeof(charset) - 1)];
+    }
+    g_ap_password[8] = '\0';
+}
+
 // Main Menu Items (Clean & Intuitive with Subtitles)
 typedef struct {
     const char* title_en;
@@ -352,7 +383,8 @@ typedef struct {
 } menu_item_info_t;
 
 static const menu_item_info_t g_main_menu_info[] = {
-    {"Wi-Fi Manager",    "Wi-Fi Менеджер",    "Scan, connect & hotspot",   "Поиск, подкл. и точка",     IPS_ACCENT_GLACIER},
+    {"Wi-Fi Scanner",   "Поиск Wi-Fi",       "Scan & list 2.4GHz APs",    "Сканирование сетей",        IPS_ACCENT_GLACIER},
+    {"Hotspot Portal",  "Точка Доступа",     "Phone control & Web Shell", "Управление с телефона",    IPS_ACCENT_AMBER},
     {"Attack Detector", "Детектор Атак",     "Wi-Fi IDS & Deauth alarm",  "IDS защита от глушения",    IPS_ACCENT_ROSE},
     {"Probe Sniffer",   "Probe Сканер",      "Sniff nearby devices",      "Поиск смартфонов рядом",    IPS_ACCENT_AMBER},
     {"Matrix Rain",     "Матрица",           "Digital rain animation",    "Цифровой дождь",            IPS_ACCENT_EMERALD},
@@ -367,7 +399,7 @@ static const menu_item_info_t g_main_menu_info[] = {
     {"Sub-GHz RF",      "Sub-GHz Радио",     "RAW record, replay & 433M", "Запись и реплей 433/868M",  IPS_ACCENT_AMBER},
     {"Micro-ADB Tool",  "Микро-ADB",         "Android remote control & shell", "Пульт и команды Android", IPS_ACCENT_EMERALD},
     {"CLI Terminal",    "Терминал",          "Shell commands & tools",    "Командная строка",          IPS_ACCENT_GLACIER},
-    {"Settings",        "Настройки",         "Language and color theme",  "Язык и цветовая тема",      IPS_TEXT_SECONDARY},
+    {"Settings",        "Настройки",         "Language, theme & AP pass", "Язык, тема и пароль точки", IPS_TEXT_SECONDARY},
     {"Reboot Device",   "Перезагрузка",      "Restart ESP32 chip",        "Перезапуск контроллера",    IPS_ACCENT_ROSE}
 };
 #define MAIN_MENU_COUNT (sizeof(g_main_menu_info) / sizeof(g_main_menu_info[0]))
@@ -684,76 +716,81 @@ static void c_draw_text(int x, int y, const char* str, uint32_t color) {
 }
 
 static void c_draw_icon_ips(int x, int y, int icon_type, uint32_t color) {
-    if (icon_type == 0) { // 0. Wi-Fi Manager
+    if (icon_type == 0) { // 0. Wi-Fi Scanner
         c_draw_circle(x + 7, y + 10, 2, color);
         c_draw_circle(x + 7, y + 10, 6, color);
         c_draw_circle(x + 7, y + 10, 10, color);
-    } else if (icon_type == 1) { // 1. Attack Detector (Shield)
+    } else if (icon_type == 1) { // 1. Hotspot Portal (Access Point Tower)
+        c_draw_rect_fill(x + 5, y + 7, 4, 7, color);
+        c_draw_line(x + 7, y + 2, x + 7, y + 6, IPS_ACCENT_AMBER);
+        c_draw_circle(x + 7, y + 2, 2, 0xFFFFFFFF);
+        c_draw_circle(x + 7, y + 2, 5, IPS_ACCENT_AMBER);
+    } else if (icon_type == 2) { // 2. Attack Detector (Shield)
         c_draw_rect_outline(x + 2, y + 2, 10, 11, IPS_ACCENT_ROSE);
         c_draw_line(x + 4, y + 7, x + 10, y + 7, IPS_ACCENT_ROSE);
         c_draw_line(x + 7, y + 4, x + 7, y + 10, IPS_ACCENT_ROSE);
-    } else if (icon_type == 2) { // 2. Probe Sniffer (Target)
+    } else if (icon_type == 3) { // 3. Probe Sniffer (Target)
         c_draw_circle(x + 7, y + 7, 5, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 7, y + 7, 0xFFFFFFFF);
-    } else if (icon_type == 3) { // 3. Matrix Rain
+    } else if (icon_type == 4) { // 4. Matrix Rain
         c_draw_text(x + 1, y + 3, "01", IPS_ACCENT_EMERALD);
-    } else if (icon_type == 4) { // 4. RF 2.4G Monitor
+    } else if (icon_type == 5) { // 5. RF 2.4G Monitor
         c_draw_rect_fill(x + 1, y + 8, 2, 6, color);
         c_draw_rect_fill(x + 4, y + 5, 2, 9, color);
         c_draw_rect_fill(x + 7, y + 2, 2, 12, color);
-    } else if (icon_type == 5) { // 5. BLE Radar
+    } else if (icon_type == 6) { // 6. BLE Radar
         c_draw_circle(x + 7, y + 7, 6, color);
         c_draw_pixel(x + 7, y + 7, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 6) { // 6. Audio Spectrum
+    } else if (icon_type == 7) { // 7. Audio Spectrum
         c_draw_rect_fill(x + 2, y + 3, 3, 10, IPS_ACCENT_GLACIER);
         c_draw_rect_fill(x + 6, y + 6, 3, 7, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 10, y + 1, 3, 12, IPS_ACCENT_AMBER);
-    } else if (icon_type == 7) { // 7. Retro Kart
+    } else if (icon_type == 8) { // 8. Retro Kart
         c_draw_rect_fill(x + 4, y + 2, 6, 10, color);
         c_draw_rect_fill(x + 2, y + 5, 10, 4, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 2, y + 3, 0xFFFFFFFF);
         c_draw_pixel(x + 11, y + 3, 0xFFFFFFFF);
         c_draw_pixel(x + 2, y + 10, 0xFFFFFFFF);
         c_draw_pixel(x + 11, y + 10, 0xFFFFFFFF);
-    } else if (icon_type == 8) { // 8. Chrome Dino
+    } else if (icon_type == 9) { // 9. Chrome Dino
         c_draw_rect_fill(x + 6, y + 2, 7, 5, color);
         c_draw_pixel(x + 8, y + 3, COLOR_BLACK);
         c_draw_rect_fill(x + 4, y + 6, 6, 5, color);
         c_draw_rect_fill(x + 2, y + 7, 3, 3, color);
         c_draw_rect_fill(x + 5, y + 11, 2, 3, color);
         c_draw_rect_fill(x + 8, y + 11, 2, 3, color);
-    } else if (icon_type == 9) { // 9. Retro Pong
+    } else if (icon_type == 10) { // 10. Retro Pong
         c_draw_rect_fill(x + 1, y + 3, 2, 8, color);
         c_draw_rect_fill(x + 11, y + 5, 2, 8, color);
         c_draw_pixel(x + 6, y + 7, IPS_ACCENT_GLACIER);
-    } else if (icon_type == 10) { // 10. System Specs
+    } else if (icon_type == 11) { // 11. System Specs
         c_draw_rect_outline(x + 2, y + 2, 10, 10, color);
         c_draw_rect_fill(x + 4, y + 4, 6, 6, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 11) { // 11. Device Scanner
+    } else if (icon_type == 12) { // 12. Device Scanner
         c_draw_rect_fill(x + 3, y + 3, 8, 8, color);
         c_draw_rect_fill(x + 1, y + 4, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 1, y + 8, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 11, y + 4, 2, 2, IPS_ACCENT_EMERALD);
         c_draw_rect_fill(x + 11, y + 8, 2, 2, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 12) { // 12. Sub-GHz RF (Antenna with Radio Waves)
+    } else if (icon_type == 13) { // 13. Sub-GHz RF (Antenna with Radio Waves)
         c_draw_line(x + 7, y + 3, x + 7, y + 12, color);
         c_draw_line(x + 4, y + 3, x + 10, y + 3, color);
         c_draw_pixel(x + 2, y + 2, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 12, y + 2, IPS_ACCENT_AMBER);
         c_draw_pixel(x + 7, y + 1, 0xFFFFFFFF);
-    } else if (icon_type == 13) { // 13. Micro-ADB (Android Robot Head)
+    } else if (icon_type == 14) { // 14. Micro-ADB (Android Robot Head)
         c_draw_rect_fill(x + 3, y + 5, 8, 7, color);
         c_draw_pixel(x + 4, y + 7, COLOR_BLACK);
         c_draw_pixel(x + 9, y + 7, COLOR_BLACK);
         c_draw_line(x + 3, y + 2, x + 4, y + 4, IPS_ACCENT_EMERALD);
         c_draw_line(x + 10, y + 2, x + 9, y + 4, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 14) { // 14. CLI Terminal
+    } else if (icon_type == 15) { // 15. CLI Terminal
         c_draw_text(x, y + 3, ">_", color);
-    } else if (icon_type == 15) { // 15. Settings (Gear / Sliders)
+    } else if (icon_type == 16) { // 16. Settings (Gear / Sliders)
         c_draw_rect_outline(x + 2, y + 3, 10, 8, color);
         c_draw_rect_fill(x + 4, y + 5, 2, 4, IPS_ACCENT_GLACIER);
         c_draw_rect_fill(x + 8, y + 5, 2, 4, IPS_ACCENT_AMBER);
-    } else if (icon_type == 16) { // 16. Reboot Device (Power symbol)
+    } else if (icon_type == 17) { // 17. Reboot Device (Power symbol)
         c_draw_circle(x + 7, y + 7, 5, color);
         c_draw_rect_fill(x + 6, y + 1, 2, 6, color);
     }
@@ -3923,46 +3960,49 @@ static void c_render_status_view(void) {
 
 static void c_render_ap_view(void) {
     bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
+    bool is_ru = (g_engine.lang == LANG_RU);
 
     if (is_ips) {
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
         c_draw_rect_fill(0, 0, g_disp_w, 28, IPS_CARD_BG);
-        c_draw_text(16, 11, "SOFTAP CONFIG WEB", IPS_TEXT_PRIMARY);
+        c_draw_text(16, 11, is_ru ? "ТОЧКА ДОСТУПА & ВЕБ-ПУЛЬТ" : "HOTSPOT & WEB PORTAL", IPS_TEXT_PRIMARY);
 
         int card_w = g_disp_w - 24;
         int card_h = g_disp_h - 65;
         c_draw_rounded_card(12, 34, card_w, card_h, 6, IPS_CARD_BG, IPS_CARD_BORDER);
 
-        int sy = 48;
-        int step = 22;
+        int sy = 46;
+        int step = 20;
 
-        c_draw_text(24, sy, "AP SSID:", IPS_TEXT_MUTED);
-        c_draw_text(90, sy, "Bullet-Setup", IPS_TEXT_PRIMARY);
+        c_draw_text(24, sy, is_ru ? "ИМЯ ТОЧКИ:" : "HOTSPOT SSID:", IPS_TEXT_MUTED);
+        c_draw_text(115, sy, "Bullet-Setup", IPS_TEXT_PRIMARY);
 
-        c_draw_text(24, sy + step, "WEB IP:", IPS_TEXT_MUTED);
-        c_draw_text(90, sy + step, "192.168.4.1", IPS_ACCENT_EMERALD);
+        c_draw_text(24, sy + step, is_ru ? "ПАРОЛЬ AP:" : "PASSWORD:", IPS_TEXT_MUTED);
+        c_draw_text(115, sy + step, g_ap_password, IPS_ACCENT_AMBER);
 
-        c_draw_text(24, sy + step * 2, "DOMAIN:", IPS_TEXT_MUTED);
-        c_draw_text(90, sy + step * 2, "bullet.local", IPS_ACCENT_GLACIER);
+        c_draw_text(24, sy + step * 2, is_ru ? "ВЕБ-ПОРТАЛ:" : "WEB PORTAL:", IPS_TEXT_MUTED);
+        c_draw_text(115, sy + step * 2, "http://192.168.4.1", IPS_ACCENT_EMERALD);
 
-        c_draw_text(24, sy + step * 3, "SECURITY:", IPS_TEXT_MUTED);
-        c_draw_text(90, sy + step * 3, "Open / Captive", IPS_ACCENT_AMBER);
+        c_draw_text(24, sy + step * 3, is_ru ? "ДОМЕН mDNS:" : "DOMAIN:", IPS_TEXT_MUTED);
+        c_draw_text(115, sy + step * 3, "http://bullet.local", IPS_ACCENT_GLACIER);
 
-        c_draw_text(24, sy + step * 4, "STATUS:", IPS_TEXT_MUTED);
-        c_draw_text(90, sy + step * 4, "READY ●", IPS_ACCENT_EMERALD);
+        c_draw_text(24, sy + step * 4, is_ru ? "ВЕБ-ТЕРМИНАЛ:" : "WEB TERMINAL:", IPS_TEXT_MUTED);
+        c_draw_text(115, sy + step * 4, is_ru ? "АКТИВЕН (с телефона) ●" : "ONLINE (READY) ●", IPS_ACCENT_EMERALD);
 
-        c_draw_text(16, g_disp_h - 16, "[Press Knob] Stop Hotspot", IPS_TEXT_MUTED);
+        c_draw_text(16, g_disp_h - 16, is_ru ? "[Кнопка] Назад в меню" : "[Press Knob] Return to Menu", IPS_TEXT_MUTED);
     } else {
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
-        c_draw_text(2, 1, "HOTAP READY ●", COLOR_BLACK);
+        c_draw_text(2, 1, "HOTSPOT AP ●", COLOR_BLACK);
 
-        c_draw_text(4, 14, "SSID: Bullet-Setup", g_active_color);
-        c_draw_text(4, 25, "IP:   192.168.4.1", g_active_color);
-        c_draw_text(4, 36, "URL:  bullet.local", g_active_color);
-        c_draw_text(4, 47, "PASS: [None/Open]", g_active_color);
+        c_draw_text(4, 13, "SSID: Bullet-Setup", g_active_color);
+        char pass_buf[32];
+        snprintf(pass_buf, sizeof(pass_buf), "PASS: %s", g_ap_password);
+        c_draw_text(4, 24, pass_buf, g_active_color);
+        c_draw_text(4, 35, "URL:  192.168.4.1", g_active_color);
+        c_draw_text(4, 46, "WEB:  bullet.local", g_active_color);
 
         c_draw_rect_fill(0, 55, OLED_W, 9, 0xFF111111);
-        c_draw_text(8, 56, "[Knob Click] Stop", g_active_color);
+        c_draw_text(8, 56, "[Hold] Back to Menu", g_active_color);
     }
 }
 
@@ -3975,12 +4015,12 @@ static void c_render_settings_view(void) {
         c_draw_rect_fill(0, 0, g_disp_w, 28, IPS_CARD_BG);
         c_draw_text(16, 11, is_ru ? "НАСТРОЙКИ СИСТЕМЫ" : "SYSTEM SETTINGS", IPS_TEXT_PRIMARY);
 
-        const int card_h = 42;
+        const int card_h = 36;
         int card_w = g_disp_w - 24;
-        const int start_y = 42;
-        const int gap = 10;
+        const int start_y = 36;
+        const int gap = 8;
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             int y = start_y + i * (card_h + gap);
             bool selected = (i == g_engine.settings_index);
 
@@ -3991,35 +4031,44 @@ static void c_render_settings_view(void) {
             c_draw_rounded_card(12, y, card_w, card_h, 6, bg, border);
 
             if (i == 0) {
-                c_draw_text(22, y + 17, is_ru ? "Язык Интерфейса: [Русский (RU)]" : "Language: [English (EN)]", text_col);
+                c_draw_text(22, y + 14, is_ru ? "Язык Интерфейса: [Русский (RU)]" : "Language: [English (EN)]", text_col);
             } else if (i == 1) {
                 const char* th_str = (g_active_color == COLOR_OLED_CYAN) ? "Nordic Cyan" :
                                      ((g_active_color == COLOR_OLED_AMBER) ? "Amber Cyber" : "Pure White");
                 char th_buf[48];
                 snprintf(th_buf, sizeof(th_buf), is_ru ? "Цветовая Тема: [%s]" : "Color Theme: [%s]", th_str);
-                c_draw_text(22, y + 17, th_buf, text_col);
+                c_draw_text(22, y + 14, th_buf, text_col);
             } else if (i == 2) {
-                c_draw_text(22, y + 17, is_ru ? "[ Назад в Главное Меню ]" : "[ Back to Main Menu ]", text_col);
+                char p_buf[48];
+                snprintf(p_buf, sizeof(p_buf), is_ru ? "Пароль Точки AP: [ %s ] (Клик-Смена)" : "AP Password: [ %s ] (Click-New)", g_ap_password);
+                c_draw_text(22, y + 14, p_buf, selected ? IPS_ACCENT_AMBER : text_col);
+            } else if (i == 3) {
+                c_draw_text(22, y + 14, is_ru ? "[ Назад в Главное Меню ]" : "[ Back to Main Menu ]", text_col);
             }
         }
     } else {
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
         c_draw_text(2, 1, is_ru ? "НАСТРОЙКИ" : "SETTINGS", COLOR_BLACK);
 
-        const int item_h = 16;
-        g_engine.target_cursor_y = (float)(14 + g_engine.settings_index * item_h);
-        g_engine.cursor_y += (g_engine.target_cursor_y - g_engine.cursor_y) * 0.18f;
+        const int item_h = 12;
+        g_engine.target_cursor_y = (float)(11 + g_engine.settings_index * item_h);
+        g_engine.cursor_y += (g_engine.target_cursor_y - g_engine.cursor_y) * 0.20f;
 
         c_draw_rect_fill(0, (int)g_engine.cursor_y, OLED_W, item_h, g_active_color);
 
         uint32_t col0 = (g_engine.settings_index == 0) ? COLOR_BLACK : g_active_color;
-        c_draw_text(4, 18, is_ru ? "Язык: [Русский]" : "Language: [EN]", col0);
+        c_draw_text(4, 12, is_ru ? "1. Язык: [Русский]" : "1. Language: [EN]", col0);
 
         uint32_t col1 = (g_engine.settings_index == 1) ? COLOR_BLACK : g_active_color;
-        c_draw_text(4, 34, is_ru ? "Тема: [Скандинавия]" : "Theme: [Nordic]", col1);
+        c_draw_text(4, 24, is_ru ? "2. Тема: [Cyan]" : "2. Theme: [Cyan]", col1);
 
         uint32_t col2 = (g_engine.settings_index == 2) ? COLOR_BLACK : g_active_color;
-        c_draw_text(4, 50, is_ru ? "[ Назад в Меню ]" : "[ Back to Main ]", col2);
+        char p_oled[32];
+        snprintf(p_oled, sizeof(p_oled), "3. AP Pass: %s", g_ap_password);
+        c_draw_text(4, 36, p_oled, col2);
+
+        uint32_t col3 = (g_engine.settings_index == 3) ? COLOR_BLACK : g_active_color;
+        c_draw_text(4, 48, is_ru ? "4. [ Назад в Меню ]" : "4. [ Back to Main ]", col3);
     }
 }
 
@@ -4231,7 +4280,7 @@ EXPORT void hw_knob_rotate(int dir) {
             else g_adb.action_idx = (int)ADB_ACTIONS_COUNT - 1;
         } else if (g_engine.view == OLED_VIEW_SETTINGS) {
             if (g_engine.settings_index > 0) g_engine.settings_index--;
-            else g_engine.settings_index = 2;
+            else g_engine.settings_index = 3;
         }
     } else { // CW / DOWN
         if (g_engine.view == OLED_VIEW_MAIN_MENU) {
@@ -4257,7 +4306,7 @@ EXPORT void hw_knob_rotate(int dir) {
             if (g_adb.action_idx < (int)ADB_ACTIONS_COUNT - 1) g_adb.action_idx++;
             else g_adb.action_idx = 0;
         } else if (g_engine.view == OLED_VIEW_SETTINGS) {
-            if (g_engine.settings_index < 2) g_engine.settings_index++;
+            if (g_engine.settings_index < 3) g_engine.settings_index++;
             else g_engine.settings_index = 0;
         }
     }
@@ -4295,7 +4344,7 @@ EXPORT void hw_button_press(int action) {
             g_engine.view == OLED_VIEW_TERMINAL) {
             g_engine.view = OLED_VIEW_MAIN_MENU;
         } else if (g_engine.view == OLED_VIEW_NETWORKS_LIST || g_engine.view == OLED_VIEW_STATUS || g_engine.view == OLED_VIEW_AP_MODE) {
-            g_engine.view = OLED_VIEW_WIFI_MENU;
+            g_engine.view = OLED_VIEW_MAIN_MENU;
         }
         return;
     }
@@ -4353,48 +4402,63 @@ EXPORT void hw_button_press(int action) {
                 g_engine.view = OLED_VIEW_WIFI_MENU;
                 g_engine.wifi_index = 0;
             } else if (g_engine.main_index == 1) {
-                g_engine.view = OLED_VIEW_DEAUTH_IDS;
+                g_engine.view = OLED_VIEW_AP_MODE;
             } else if (g_engine.main_index == 2) {
-                g_engine.view = OLED_VIEW_PROBE_SNIFFER;
+                g_engine.view = OLED_VIEW_DEAUTH_IDS;
             } else if (g_engine.main_index == 3) {
-                g_engine.view = OLED_VIEW_MATRIX_RAIN;
+                g_engine.view = OLED_VIEW_PROBE_SNIFFER;
             } else if (g_engine.main_index == 4) {
-                g_engine.view = OLED_VIEW_SNIFFER;
+                g_engine.view = OLED_VIEW_MATRIX_RAIN;
             } else if (g_engine.main_index == 5) {
-                g_engine.view = OLED_VIEW_BLE_RADAR;
+                g_engine.view = OLED_VIEW_SNIFFER;
             } else if (g_engine.main_index == 6) {
-                g_engine.view = OLED_VIEW_FFT_SPECTRUM;
+                g_engine.view = OLED_VIEW_BLE_RADAR;
             } else if (g_engine.main_index == 7) {
+                g_engine.view = OLED_VIEW_FFT_SPECTRUM;
+            } else if (g_engine.main_index == 8) {
                 g_engine.view = OLED_VIEW_KART_GAME;
                 g_kart.initialized = false;
-            } else if (g_engine.main_index == 8) {
+            } else if (g_engine.main_index == 9) {
                 g_engine.view = OLED_VIEW_DINO_GAME;
                 g_dino.initialized = false;
-            } else if (g_engine.main_index == 9) {
+            } else if (g_engine.main_index == 10) {
                 g_engine.view = OLED_VIEW_PONG_GAME;
                 g_pong.state = PONG_STATE_SELECT_DIFF;
                 g_pong.ball_in_play = false;
-            } else if (g_engine.main_index == 10) {
-                g_engine.view = OLED_VIEW_SYS_INFO;
             } else if (g_engine.main_index == 11) {
+                g_engine.view = OLED_VIEW_SYS_INFO;
+            } else if (g_engine.main_index == 12) {
                 g_engine.view = OLED_VIEW_HW_SCANNER;
                 hw_bus_scan();
-            } else if (g_engine.main_index == 12) {
+            } else if (g_engine.main_index == 13) {
                 g_engine.view = OLED_VIEW_SUBGHZ;
                 g_subghz.page = SUBGHZ_PAGE_MENU;
-            } else if (g_engine.main_index == 13) {
-                g_engine.view = OLED_VIEW_ADB_APP;
             } else if (g_engine.main_index == 14) {
-                g_engine.view = OLED_VIEW_TERMINAL;
+                g_engine.view = OLED_VIEW_ADB_APP;
             } else if (g_engine.main_index == 15) {
+                g_engine.view = OLED_VIEW_TERMINAL;
+            } else if (g_engine.main_index == 16) {
                 g_engine.view = OLED_VIEW_SETTINGS;
                 g_engine.settings_index = 0;
-            } else if (g_engine.main_index == 16) {
+            } else if (g_engine.main_index == 17) {
 #ifndef BULLET_DESKTOP_BUILD
                 esp_restart();
 #else
                 oled_init();
 #endif
+            }
+        } 
+        else if (g_engine.view == OLED_VIEW_SETTINGS) {
+            if (g_engine.settings_index == 0) {
+                g_engine.lang = (g_engine.lang == LANG_RU) ? LANG_EN : LANG_RU;
+            } else if (g_engine.settings_index == 1) {
+                if (g_active_color == COLOR_OLED_CYAN) g_active_color = COLOR_OLED_AMBER;
+                else if (g_active_color == COLOR_OLED_AMBER) g_active_color = COLOR_OLED_WHITE;
+                else g_active_color = COLOR_OLED_CYAN;
+            } else if (g_engine.settings_index == 2) {
+                wifi_ui_regenerate_ap_password();
+            } else if (g_engine.settings_index == 3) {
+                g_engine.view = OLED_VIEW_MAIN_MENU;
             }
         } 
         else if (g_engine.view == OLED_VIEW_SUBGHZ) {

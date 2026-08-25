@@ -177,8 +177,131 @@ void updateHardwareTelemetry() {
 }
 
 // REST Endpoints for Web Companion
+// REST Endpoints & Web Companion Portal for Phone/PC
 void handleRoot() {
-    server.send(200, "text/html", "<html><body><h1>Bullet OS Active</h1></body></html>");
+    const char* html = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bullet OS - Web Companion</title>
+  <style>
+    :root { --bg: #090e11; --card: #121c22; --border: #1e2f38; --cyan: #38ef7d; --blue: #11998e; --amber: #f7971e; --text: #e0f2fe; --muted: #64748b; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+    body { background: var(--bg); color: var(--text); padding: 14px; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 20px; font-weight: 900; letter-spacing: 2px; color: var(--cyan); text-shadow: 0 0 10px rgba(56,239,125,0.4); }
+    .badge { background: #0f2d1e; color: var(--cyan); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid var(--cyan); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 14px 0; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    .card-title { font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .card-val { font-size: 16px; font-weight: bold; color: var(--text); }
+    .controls { display: flex; gap: 8px; margin-bottom: 14px; }
+    .btn { flex: 1; background: var(--card); border: 1px solid var(--cyan); color: var(--cyan); padding: 12px 6px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; text-align: center; }
+    .btn:active { background: var(--cyan); color: #000; }
+    .btn-red { border-color: #f43f5e; color: #f43f5e; }
+    .btn-amber { border-color: var(--amber); color: var(--amber); }
+    .terminal-box { background: #05080a; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
+    .term-title { font-size: 12px; color: var(--cyan); margin-bottom: 8px; font-weight: bold; }
+    .term-log { height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.5; color: #94a3b8; font-family: monospace; white-space: pre-wrap; margin-bottom: 8px; }
+    .term-input-row { display: flex; gap: 6px; }
+    .term-input { flex: 1; background: #0b1318; border: 1px solid var(--border); border-radius: 4px; color: #fff; padding: 8px; font-family: monospace; outline: none; font-size: 13px; }
+    .term-input:focus { border-color: var(--cyan); }
+    .quick-bar { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; margin-bottom: 8px; }
+    .chip { background: #13222a; border: 1px solid var(--border); color: #38bdf8; font-size: 11px; padding: 4px 8px; border-radius: 12px; cursor: pointer; white-space: nowrap; }
+    .chip:active { background: #38bdf8; color: #000; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡ BULLET OS</div>
+    <div class="badge">HOTSPOT ONLINE</div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="card-title">Device Model</div><div class="card-val" id="t-chip">ESP32-S3</div></div>
+    <div class="card"><div class="card-title">PSRAM / Heap</div><div class="card-val" id="t-mem">8MB Octal</div></div>
+    <div class="card"><div class="card-title">Wi-Fi IP</div><div class="card-val" id="t-ip">192.168.4.1</div></div>
+    <div class="card"><div class="card-title">Uptime</div><div class="card-val" id="t-up">00:00:00</div></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" onclick="sendKnob(0)">◄ LEFT</button>
+    <button class="btn" onclick="sendBtn(0)">● CLICK</button>
+    <button class="btn" onclick="sendKnob(1)">RIGHT ►</button>
+    <button class="btn btn-red" onclick="sendBtn(2)">↩ BACK</button>
+  </div>
+
+  <div class="quick-bar">
+    <div class="chip" onclick="runCmd('pcap start')">▶ PCAP Start</div>
+    <div class="chip" onclick="runCmd('pcap stop')">⏹ PCAP Stop</div>
+    <div class="chip" onclick="window.location.href='/capture.pcap'">⬇ Download .pcap</div>
+    <div class="chip" onclick="runCmd('wifi scan')">📡 Wi-Fi Scan</div>
+    <div class="chip" onclick="runCmd('subghz rx')">📻 Sub-GHz RX</div>
+    <div class="chip" onclick="runCmd('neofetch')">ℹ Specs</div>
+  </div>
+
+  <div class="terminal-box">
+    <div class="term-title">💻 INTERACTIVE WEB TERMINAL</div>
+    <div class="term-log" id="log">Bullet OS Web Terminal Initialized.
+Type commands below (e.g. 'help', 'pcap start', 'subghz rx').</div>
+    <div class="term-input-row">
+      <input type="text" id="cmd-in" class="term-input" placeholder="Type command..." onkeydown="if(event.key==='Enter') execInput();">
+      <button class="btn btn-amber" style="flex:0; padding:8px 14px;" onclick="execInput();">SEND</button>
+    </div>
+  </div>
+
+  <script>
+    function log(msg) {
+      const el = document.getElementById('log');
+      el.textContent += '\n' + msg;
+      el.scrollTop = el.scrollHeight;
+    }
+    function sendKnob(d) { fetch('/api/knob?dir=' + d).catch(e=>{}); }
+    function sendBtn(a) { fetch('/api/btn?action=' + a).catch(e=>{}); }
+    function runCmd(c) {
+      log('esp32-s3:~$ ' + c);
+      fetch('/api/cmd?c=' + encodeURIComponent(c))
+        .then(r => r.json())
+        .then(d => log('[OK] Executed on Bullet OS: ' + c))
+        .catch(e => log('[Error] Command sent'));
+    }
+    function execInput() {
+      const inp = document.getElementById('cmd-in');
+      const val = inp.value.trim();
+      if (!val) return;
+      runCmd(val);
+      inp.value = '';
+    }
+    setInterval(() => {
+      fetch('/api/telemetry').then(r=>r.json()).then(d=>{
+        if (d.chip) document.getElementById('t-chip').textContent = d.chip;
+        if (d.ip) document.getElementById('t-ip').textContent = d.ip;
+        let s = d.uptime || 0;
+        let h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+        document.getElementById('t-up').textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+      }).catch(e=>{});
+    }, 2000);
+  </script>
+</body>
+</html>
+)rawliteral";
+    server.send(200, "text/html", html);
+}
+
+void handleCmd() {
+    if (server.hasArg("c")) {
+        String c = server.arg("c");
+        // Forward command string to C terminal engine
+        for (size_t i = 0; i < c.length(); i++) {
+            oled_char_input(c[i]);
+        }
+        oled_enter();
+        server.send(200, "application/json", "{\"status\":\"OK\",\"cmd\":\"" + c + "\"}");
+    } else {
+        server.send(400, "text/plain", "Missing c");
+    }
 }
 
 void handleTelemetry() {
@@ -319,10 +442,14 @@ void setup() {
 #endif
 
 #ifndef QEMU_EMULATION
-    // Start SoftAP & Station mode
+    // Initialize persistent random AP password
+    wifi_ui_init_ap_password();
+    const char* ap_pass = wifi_ui_get_ap_password();
+
+    // Start Secure SoftAP & Station mode
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(ap_ssid, ap_pass);
-    Serial.printf("[Wi-Fi] SoftAP '%s' started. IP: %s\n", ap_ssid, WiFi.softAPIP().toString().c_str());
+    Serial.printf("[Wi-Fi] Secure Hotspot '%s' started! Password: '%s' | IP: %s\n", ap_ssid, ap_pass, WiFi.softAPIP().toString().c_str());
 
     if (MDNS.begin("bullet")) {
         Serial.println("[mDNS] Responder at http://bullet.local");
@@ -345,6 +472,7 @@ void setup() {
     server.on("/api/pcap/start", handlePcapStart);
     server.on("/api/pcap/stop", handlePcapStop);
     server.on("/api/pcap/status", handlePcapStatus);
+    server.on("/api/cmd", handleCmd);
     server.on("/api/telemetry", handleTelemetry);
     server.on("/api/knob", handleKnob);
     server.on("/api/btn", handleButton);

@@ -9,12 +9,15 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <SPI.h>
+#include <SD.h>
 #include <Wire.h>
 #include <esp_wifi.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "wifi_oled_ui.h"
 #include "drivers/cc1101_driver.h"
+#include "drivers/pcap_logger.h"
 
 // Hardware AP Configuration
 const char *ap_ssid = "Bullet-Setup";
@@ -41,7 +44,7 @@ typedef struct {
 #pragma pack(pop)
 
 void IRAM_ATTR wifi_promiscuous_rx_callback(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_MGMT) return;
+    if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA) return;
     wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
     wifi_mgmt_hdr_t* mgmt = (wifi_mgmt_hdr_t*)pkt->payload;
 
@@ -49,6 +52,11 @@ void IRAM_ATTR wifi_promiscuous_rx_callback(void* buf, wifi_promiscuous_pkt_type
     int8_t rssi = pkt->rx_ctrl.rssi;
 
     wifi_ui_feed_sniffer_packet(channel, rssi);
+
+    // Stream directly into live PCAP file on SD card / LittleFS
+    if (pcap_logger_is_recording()) {
+        pcap_logger_log_packet((const uint8_t*)pkt->payload, pkt->rx_ctrl.sig_len, pkt->rx_ctrl.sig_len);
+    }
 
     uint16_t fc = mgmt->fctl;
     // Deauth (0x00C0) or Disassociation (0x00A0)
@@ -210,6 +218,49 @@ void handleButton() {
     }
 }
 
+void handlePcapDownload() {
+    pcap_status_t st;
+    pcap_logger_get_status(&st);
+    File f;
+    if (st.sd_mounted) {
+        f = SD.open(st.current_filename, FILE_READ);
+    } else {
+        f = LittleFS.open(st.current_filename, "r");
+    }
+
+    if (!f) {
+        server.send(404, "text/plain", "No PCAP capture found. Run 'pcap start' first.");
+        return;
+    }
+
+    server.sendHeader("Content-Disposition", "attachment; filename=\"capture.pcap\"");
+    server.streamFile(f, "application/vnd.tcpdump.pcap");
+    f.close();
+}
+
+void handlePcapStart() {
+    pcap_logger_start("/capture.pcap");
+    server.send(200, "application/json", "{\"status\":\"RECORDING\",\"file\":\"/capture.pcap\"}");
+}
+
+void handlePcapStop() {
+    pcap_logger_stop();
+    pcap_status_t st;
+    pcap_logger_get_status(&st);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"status\":\"STOPPED\",\"packets\":%lu,\"bytes\":%lu}", (unsigned long)st.total_packets, (unsigned long)st.total_bytes);
+    server.send(200, "application/json", buf);
+}
+
+void handlePcapStatus() {
+    pcap_status_t st;
+    pcap_logger_get_status(&st);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"recording\":%s,\"packets\":%lu,\"bytes\":%lu,\"sd_mounted\":%s}",
+             st.is_recording ? "true" : "false", (unsigned long)st.total_packets, (unsigned long)st.total_bytes, st.sd_mounted ? "true" : "false");
+    server.send(200, "application/json", buf);
+}
+
 void handleReboot() {
     server.send(200, "text/plain", "Rebooting...");
     delay(100);
@@ -285,14 +336,21 @@ void setup() {
     // Perform hardware bus scan
     performRealHardwareBusScan();
 
+    pcap_logger_init();
+
     // Web endpoints
     server.on("/", handleRoot);
+    server.on("/capture.pcap", handlePcapDownload);
+    server.on("/api/pcap/download", handlePcapDownload);
+    server.on("/api/pcap/start", handlePcapStart);
+    server.on("/api/pcap/stop", handlePcapStop);
+    server.on("/api/pcap/status", handlePcapStatus);
     server.on("/api/telemetry", handleTelemetry);
     server.on("/api/knob", handleKnob);
     server.on("/api/btn", handleButton);
     server.on("/api/reboot", handleReboot);
     server.begin();
-    Serial.println("[HTTP] Web Server started");
+    Serial.println("[HTTP] Web Server & PCAP Exporter started");
 #else
     Serial.println("[QEMU] Running in QEMU Emulator!");
     Serial.println("[Control] 'a'/'s'=Knob Left, 'd'/'w'=Knob Right, ' '=Click, 'q'=Back, 'p'=Screen Dump");

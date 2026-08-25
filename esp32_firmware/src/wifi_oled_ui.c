@@ -6,6 +6,7 @@
 
 #include "wifi_oled_ui.h"
 #include "logo_bitmap.h"
+#include "drivers/pcap_logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2808,6 +2809,7 @@ static void term_execute_cmd(const char* full_cmd) {
 
     if (strcmp(cmd, "help") == 0 || strcmp(cmd, "man") == 0) {
         term_print("BULLET CLI (v0.2.1):");
+        term_print("  pcap [start|stop|status|clear]");
         term_print("  subghz [rx|tx <slot>|list|scan]");
         term_print("  adb [connect|devices|reboot|key|shell]");
         term_print("  neofetch | hw scan | devices | sensors");
@@ -2815,6 +2817,35 @@ static void term_execute_cmd(const char* full_cmd) {
         term_print("  rf spec | rf sniff | ids | probe");
         term_print("  matrix | ble | dmesg | ping | curl");
         term_print("  kart | dino | pong | uname | free | df");
+    }
+    // PCAP Wireshark Sniffer CLI
+    else if (strcmp(cmd, "pcap") == 0 || strcmp(cmd, "tcpdump") == 0) {
+        if (strcmp(arg1, "start") == 0 || strcmp(arg1, "rec") == 0) {
+            pcap_logger_start("/capture.pcap");
+            term_print("[PCAP] Started logging 802.11 frames to /capture.pcap");
+            term_print("  Download from phone: http://bullet.local/capture.pcap");
+        } else if (strcmp(arg1, "stop") == 0) {
+            pcap_logger_stop();
+            pcap_status_t st;
+            pcap_logger_get_status(&st);
+            char smsg[64];
+            snprintf(smsg, sizeof(smsg), "[PCAP] Stopped. Total: %lu pkts (%lu bytes)", (unsigned long)st.total_packets, (unsigned long)st.total_bytes);
+            term_print(smsg);
+        } else if (strcmp(arg1, "status") == 0 || strcmp(arg1, "info") == 0) {
+            pcap_status_t st;
+            pcap_logger_get_status(&st);
+            char smsg[64];
+            snprintf(smsg, sizeof(smsg), "Status: %s | Storage: %s", st.is_recording ? "RECORDING" : "IDLE", st.sd_mounted ? "MicroSD Card" : "LittleFS Flash");
+            term_print(smsg);
+            snprintf(smsg, sizeof(smsg), "Packets: %lu | Size: %lu bytes", (unsigned long)st.total_packets, (unsigned long)st.total_bytes);
+            term_print(smsg);
+        } else if (strcmp(arg1, "clear") == 0) {
+            pcap_logger_clear();
+            term_print("[PCAP] Capture file deleted from storage.");
+        } else {
+            term_print("Usage: pcap start | stop | status | clear");
+            term_print("  Download: http://bullet.local/capture.pcap");
+        }
     }
     // Sub-GHz RF Transceiver CLI
     else if (strcmp(cmd, "subghz") == 0 || strcmp(cmd, "cc1101") == 0 || strcmp(cmd, "rf433") == 0) {

@@ -440,23 +440,115 @@ void handleScreen() {
 }
 
 void handleFilesList() {
-    String json = "[";
+    String path = server.hasArg("path") ? server.arg("path") : "/";
+    if (!path.startsWith("/")) path = "/" + path;
+
+    File root = LittleFS.open(path);
+    if (!root || !root.isDirectory()) {
+        server.send(404, "application/json", "{\"error\":\"Directory not found\"}");
+        return;
+    }
+
+    String json = "{\"currentPath\":\"" + path + "\",\"items\":[";
     bool first = true;
 
-    File root = LittleFS.open("/");
-    if (root && root.isDirectory()) {
-        File f = root.openNextFile();
-        while (f) {
-            if (!f.isDirectory()) {
-                if (!first) json += ",";
-                first = false;
-                json += "{\"name\":\"" + String(f.name()) + "\",\"size\":" + String(f.size()) + ",\"type\":\"" + String(f.name()).substring(String(f.name()).lastIndexOf('.') + 1) + "\"}";
-            }
-            f = root.openNextFile();
-        }
+    File f = root.openNextFile();
+    while (f) {
+        if (!first) json += ",";
+        first = false;
+        String name = String(f.name());
+        // LittleFS on ESP32 sometimes returns full path or relative
+        if (name.lastIndexOf('/') >= 0) name = name.substring(name.lastIndexOf('/') + 1);
+        bool isDir = f.isDirectory();
+        String itemPath = path == "/" ? ("/" + name) : (path + "/" + name);
+        String ext = isDir ? "dir" : name.substring(name.lastIndexOf('.') + 1);
+
+        json += "{\"name\":\"" + name + "\",\"path\":\"" + itemPath + "\",\"isDir\":" + (isDir ? "true" : "false") + ",\"size\":" + String(f.size()) + ",\"type\":\"" + ext + "\"}";
+        f = root.openNextFile();
     }
-    json += "]";
+    json += "]}";
     server.send(200, "application/json", json);
+}
+
+void handleFilesRead() {
+    if (!server.hasArg("path")) {
+        server.send(400, "application/json", "{\"error\":\"Missing path parameter\"}");
+        return;
+    }
+    String path = server.arg("path");
+    if (!path.startsWith("/")) path = "/" + path;
+
+    if (!LittleFS.exists(path)) {
+        server.send(404, "application/json", "{\"error\":\"File not found\"}");
+        return;
+    }
+
+    File f = LittleFS.open(path, "r");
+    if (!f || f.isDirectory()) {
+        server.send(400, "application/json", "{\"error\":\"Cannot read directory as file\"}");
+        return;
+    }
+
+    size_t sz = f.size();
+    String name = path.substring(path.lastIndexOf('/') + 1);
+    String ext = name.substring(name.lastIndexOf('.') + 1);
+    ext.toLowerCase();
+
+    bool isText = (ext == "txt" || ext == "cfg" || ext == "json" || ext == "log" || ext == "sub" || ext == "raw" || ext == "ini" || ext == "csv" || ext == "sh");
+
+    if (isText) {
+        String content = "";
+        while (f.available() && content.length() < 16384) {
+            content += (char)f.read();
+        }
+        f.close();
+        // Escape JSON quotes
+        content.replace("\\", "\\\\");
+        content.replace("\"", "\\\"");
+        content.replace("\n", "\\n");
+        content.replace("\r", "");
+        content.replace("\t", "  ");
+
+        String json = "{\"name\":\"" + name + "\",\"path\":\"" + path + "\",\"isBinary\":false,\"size\":" + String(sz) + ",\"content\":\"" + content + "\"}";
+        server.send(200, "application/json", json);
+    } else {
+        // Hex preview
+        String hexContent = "";
+        uint8_t buf[16];
+        size_t offset = 0;
+        size_t previewLen = sz < 256 ? sz : 256;
+        while (f.available() && offset < previewLen) {
+            int n = f.read(buf, 16);
+            if (n <= 0) break;
+            char line[128];
+            char hexBuf[48] = {0};
+            char ascBuf[17] = {0};
+            for (int i = 0; i < n; i++) {
+                sprintf(hexBuf + i * 3, "%02X ", buf[i]);
+                ascBuf[i] = (buf[i] >= 32 && buf[i] <= 126) ? (char)buf[i] : '.';
+            }
+            snprintf(line, sizeof(line), "%04X:  %-48s |%s|\\n", (unsigned int)offset, hexBuf, ascBuf);
+            hexContent += String(line);
+            offset += n;
+        }
+        f.close();
+        if (sz > 256) hexContent += "... [" + String(sz - 256) + " more bytes in file]\\n";
+
+        String json = "{\"name\":\"" + name + "\",\"path\":\"" + path + "\",\"isBinary\":true,\"size\":" + String(sz) + ",\"content\":\"" + hexContent + "\"}";
+        server.send(200, "application/json", json);
+    }
+}
+
+void handleFilesMkdir() {
+    String path = server.hasArg("path") ? server.arg("path") : "/";
+    String name = server.hasArg("name") ? server.arg("name") : "";
+    if (name.length() == 0) {
+        server.send(400, "application/json", "{\"error\":\"Missing folder name\"}");
+        return;
+    }
+    String target = path == "/" ? ("/" + name) : (path + "/" + name);
+    LittleFS.mkdir(target);
+    server.send(200, "application/json", "{\"status\":\"OK\",\"path\":\"" + target + "\"}");
 }
 
 void handleCmd() {
@@ -638,6 +730,8 @@ void setup() {
     server.on("/", handleRoot);
     server.on("/api/screen", handleScreen);
     server.on("/api/files/list", handleFilesList);
+    server.on("/api/files/read", handleFilesRead);
+    server.on("/api/files/mkdir", handleFilesMkdir);
     server.on("/capture.pcap", handlePcapDownload);
     server.on("/api/pcap/download", handlePcapDownload);
     server.on("/api/pcap/start", handlePcapStart);

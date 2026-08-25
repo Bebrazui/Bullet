@@ -136,18 +136,34 @@
     </div>
   </div>
 
-  <!-- TAB 2: FILE EXPLORER -->
+  <!-- TAB 2: HIERARCHICAL FILE EXPLORER -->
   <div id="view-files" class="view">
+    <!-- Breadcrumbs Navigation Bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b111c; border:1px solid var(--border); border-radius:10px; padding:8px 12px; margin-bottom:10px;">
+      <div id="breadcrumbs" style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--blue); font-weight:700; overflow-x:auto; white-space:nowrap;">
+        <span style="color:var(--muted); cursor:pointer;" onclick="cdPath('/')">💾 LittleFS</span>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="f-btn" onclick="goUpDir()" style="padding:4px 8px; font-size:11px;">⬆ Вверх</button>
+        <button class="f-btn" onclick="promptMkdir()" style="padding:4px 8px; font-size:11px; color:var(--cyan); border-color:#059669;">➕ Папка</button>
+      </div>
+    </div>
+
+    <!-- Upload Box for Current Folder -->
     <div class="drop-box" onclick="document.getElementById('upload-input').click()">
-      📤 Нажмите или перетащите файл для загрузки на ESP32 (LittleFS / SD)
+      📤 Нажмите для загрузки файла в <span id="upload-dest-label" style="color:var(--cyan);">/</span>
       <input type="file" id="upload-input" style="display:none" onchange="uploadFile(this.files[0])">
     </div>
 
+    <!-- File Tree Container -->
     <div class="file-container">
-      <div style="font-size:12px; font-weight:bold; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">
-        Файлы на устройстве (LittleFS / MicroSD)
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="font-size:12px; font-weight:bold; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">
+          Содержимое каталога
+        </div>
+        <div id="dir-count" style="font-size:11px; color:var(--muted);">0 элементов</div>
       </div>
-      <div id="files-list">Загрузка списка файлов...</div>
+      <div id="files-list">Загрузка файловой системы...</div>
     </div>
   </div>
 
@@ -161,12 +177,33 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
     </div>
   </div>
 
+  <!-- FILE VIEWER / READER MODAL -->
+  <div id="file-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(6px); z-index:999; padding:14px; align-items:center; justify-content:center;">
+    <div style="background:var(--card); border:1px solid var(--border); border-radius:14px; width:100%; max-width:540px; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.9); overflow:hidden;">
+      <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:#0b111c;">
+        <div>
+          <div id="modal-filename" style="font-size:14px; font-weight:bold; color:#fff;">filename.txt</div>
+          <div id="modal-meta" style="font-size:11px; color:var(--muted);">/path &bullet; 1.2 KB</div>
+        </div>
+        <button onclick="closeModal()" style="background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:4px;">✕</button>
+      </div>
+      <pre id="modal-content" style="padding:14px; overflow:auto; font-family:monospace; font-size:12px; line-height:1.4; color:#94a3b8; background:#04060a; flex:1; white-space:pre-wrap;"></pre>
+      <div style="padding:10px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; background:#0b111c;">
+        <button class="f-btn" onclick="copyModalContent()">📋 Копировать</button>
+        <a id="modal-download-btn" class="f-btn" href="#" download>⬇ Скачать</a>
+        <button class="f-btn f-btn-del" onclick="closeModal()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    let currentDir = '/';
+
     function selectTab(name) {
       document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['scrcpy','files','term'][i] === name));
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById('view-' + name).classList.add('active');
-      if (name === 'files') fetchFiles();
+      if (name === 'files') fetchFiles(currentDir);
     }
 
     // High Speed Screen Mirroring Engine
@@ -178,7 +215,7 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
       loader.src = '/api/screen?t=' + Date.now();
       loader.onload = () => {
         streamImg.src = loader.src;
-        setTimeout(streamNextFrame, 33); // ~30 FPS
+        setTimeout(streamNextFrame, 33);
       };
       loader.onerror = () => setTimeout(streamNextFrame, 150);
     }
@@ -189,9 +226,9 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
       const rect = e.currentTarget.getBoundingClientRect();
       const relX = (e.clientX - rect.left) / rect.width;
       const relY = (e.clientY - rect.top) / rect.height;
-      if (relY > 0.8) sendBtn(2); // Bottom strip = Back
-      else if (relX < 0.35) sendKnob(0); // Left 35% = Knob Left
-      else if (relX > 0.65) sendKnob(1); // Right 35% = Knob Right
+      if (relY > 0.8) sendBtn(2); // Bottom = Back
+      else if (relX < 0.35) sendKnob(0); // Left = Knob Left
+      else if (relX > 0.65) sendKnob(1); // Right = Knob Right
       else sendBtn(0); // Center = Click
     }
 
@@ -220,51 +257,140 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
       input.value = '';
     }
 
-    function fetchFiles() {
-      const listEl = document.getElementById('files-list');
-      fetch('/api/files/list')
+    // --- HIERARCHICAL FILE EXPLORER ENGINE ---
+    function renderBreadcrumbs(dir) {
+      const el = document.getElementById('breadcrumbs');
+      document.getElementById('upload-dest-label').textContent = dir;
+      const parts = dir.split('/').filter(p => p.length > 0);
+      let html = '<span style="color:var(--muted); cursor:pointer;" onclick="cdPath(\'/\')">💾 LittleFS</span>';
+      let accum = '';
+      for (let p of parts) {
+        accum += '/' + p;
+        const target = accum;
+        html += ' <span style="color:var(--muted)">/</span> <span style="cursor:pointer; color:var(--blue);" onclick="cdPath(\'' + target + '\')">' + p + '</span>';
+      }
+      el.innerHTML = html;
+    }
+
+    function cdPath(dir) {
+      currentDir = dir;
+      fetchFiles(dir);
+    }
+
+    function goUpDir() {
+      if (currentDir === '/' || !currentDir) return;
+      const parts = currentDir.split('/').filter(p => p.length > 0);
+      parts.pop();
+      currentDir = parts.length === 0 ? '/' : '/' + parts.join('/');
+      fetchFiles(currentDir);
+    }
+
+    function promptMkdir() {
+      const name = prompt('Имя новой папки в ' + currentDir + ':');
+      if (!name || !name.trim()) return;
+      fetch('/api/files/mkdir?path=' + encodeURIComponent(currentDir) + '&name=' + encodeURIComponent(name.trim()))
         .then(r => r.json())
-        .then(files => {
-          if (!files || files.length === 0) {
-            listEl.innerHTML = '<div style="color:var(--muted); padding:10px 0;">Хранилище пусто. Загрузите файл или запустите PCAP.</div>';
+        .then(() => fetchFiles(currentDir))
+        .catch(e => alert('Ошибка создания папки'));
+    }
+
+    function fetchFiles(dir) {
+      currentDir = dir || '/';
+      renderBreadcrumbs(currentDir);
+      const listEl = document.getElementById('files-list');
+      listEl.innerHTML = '<div style="color:var(--muted); padding:10px 0;">Чтение каталога...</div>';
+
+      fetch('/api/files/list?path=' + encodeURIComponent(currentDir))
+        .then(r => r.json())
+        .then(data => {
+          const items = data.items || [];
+          document.getElementById('dir-count').textContent = items.length + ' эл.';
+          if (items.length === 0) {
+            listEl.innerHTML = '<div style="color:var(--muted); padding:12px 0;">Папка пуста. Загрузите файл или создайте подпапку.</div>';
             return;
           }
           let html = '';
-          for (let f of files) {
-            let sizeStr = (f.size / 1024).toFixed(1) + ' KB';
-            let typeStr = (f.type || 'bin').toUpperCase();
-            html += '<div class="file-row">' +
-              '<div><div class="f-title">' + f.name + '</div><div class="f-info">' + sizeStr + ' &bullet; ' + typeStr + '</div></div>' +
-              '<div class="f-btns">' +
-                '<a class="f-btn" href="/api/files/download?name=' + encodeURIComponent(f.name) + '" download>⬇ Скачать</a>' +
-                '<button class="f-btn f-btn-del" onclick="deleteFile(\'' + f.name + '\')">🗑</button>' +
-              '</div>' +
-            '</div>';
+          for (let item of items) {
+            if (item.isDir) {
+              html += '<div class="file-row">' +
+                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="cdPath(\'' + item.path + '\')">' +
+                  '<span style="font-size:18px;">📁</span>' +
+                  '<div><div class="f-title" style="color:var(--cyan);">' + item.name + '</div><div class="f-info">Каталог</div></div>' +
+                '</div>' +
+                '<div class="f-btns">' +
+                  '<button class="f-btn" onclick="cdPath(\'' + item.path + '\')">Открыть ➔</button>' +
+                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + item.path + '\')">🗑</button>' +
+                '</div>' +
+              '</div>';
+            } else {
+              const sizeStr = (item.size / 1024).toFixed(1) + ' KB';
+              let icon = '📄';
+              if (item.name.endsWith('.pcap')) icon = '📡';
+              else if (item.name.endsWith('.sub') || item.name.endsWith('.raw')) icon = '📻';
+              else if (item.name.endsWith('.cfg') || item.name.endsWith('.json')) icon = '⚙';
+              else if (item.name.endsWith('.log')) icon = '📝';
+
+              html += '<div class="file-row">' +
+                '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="readFileContent(\'' + item.path + '\')">' +
+                  '<span style="font-size:18px;">' + icon + '</span>' +
+                  '<div><div class="f-title">' + item.name + '</div><div class="f-info">' + sizeStr + ' &bullet; ' + (item.type || '').toUpperCase() + '</div></div>' +
+                '</div>' +
+                '<div class="f-btns">' +
+                  '<button class="f-btn" onclick="readFileContent(\'' + item.path + '\')">👁 Читать</button>' +
+                  '<a class="f-btn" href="/api/files/download?path=' + encodeURIComponent(item.path) + '" download>⬇</a>' +
+                  '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + item.path + '\')">🗑</button>' +
+                '</div>' +
+              '</div>';
+            }
           }
           listEl.innerHTML = html;
         })
-        .catch(e => { listEl.innerHTML = '<div style="color:var(--rose);">Ошибка загрузки файлов</div>'; });
+        .catch(e => { listEl.innerHTML = '<div style="color:var(--rose);">Ошибка чтения папки: ' + e + '</div>'; });
+    }
+
+    function readFileContent(path) {
+      fetch('/api/files/read?path=' + encodeURIComponent(path))
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { alert('Ошибка: ' + data.error); return; }
+          document.getElementById('modal-filename').textContent = data.name + (data.isBinary ? ' (HEX DUMP)' : '');
+          document.getElementById('modal-meta').textContent = data.path + ' • ' + (data.size / 1024).toFixed(2) + ' KB';
+          document.getElementById('modal-content').textContent = data.content;
+          document.getElementById('modal-download-btn').href = '/api/files/download?path=' + encodeURIComponent(data.path);
+          const modal = document.getElementById('file-modal');
+          modal.style.display = 'flex';
+        })
+        .catch(e => alert('Не удалось прочитать файл: ' + e));
+    }
+
+    function closeModal() {
+      document.getElementById('file-modal').style.display = 'none';
+    }
+
+    function copyModalContent() {
+      const text = document.getElementById('modal-content').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('Содержимое файла скопировано!'));
     }
 
     function uploadFile(file) {
       if (!file) return;
-      fetch('/api/files/upload?name=' + encodeURIComponent(file.name), {
+      fetch('/api/files/upload?path=' + encodeURIComponent(currentDir) + '&name=' + encodeURIComponent(file.name), {
         method: 'POST',
         body: file
       })
       .then(r => r.json())
       .then(d => {
-        alert('Файл "' + file.name + '" успешно загружен на ESP32!');
-        fetchFiles();
+        alert('Файл "' + file.name + '" загружен в ' + currentDir);
+        fetchFiles(currentDir);
       })
-      .catch(e => alert('Ошибка загрузки файла'));
+      .catch(e => alert('Ошибка загрузки: ' + e));
     }
 
-    function deleteFile(name) {
-      if (!confirm('Удалить файл "' + name + '" с ESP32?')) return;
-      fetch('/api/files/delete?name=' + encodeURIComponent(name))
+    function deleteItem(path) {
+      if (!confirm('Удалить "' + path + '" с ESP32?')) return;
+      fetch('/api/files/delete?path=' + encodeURIComponent(path))
         .then(r => r.json())
-        .then(() => fetchFiles())
+        .then(() => fetchFiles(currentDir))
         .catch(e => alert('Ошибка удаления'));
     }
   </script>

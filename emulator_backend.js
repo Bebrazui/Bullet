@@ -131,7 +131,48 @@ function getLocalIp() {
 
 const localIp = getLocalIp();
 const STORAGE_DIR = path.join(__dirname, 'storage');
-if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
+if (!fs.existsSync(STORAGE_DIR)) {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+}
+
+// Seed realistic LittleFS default folder structure if empty
+function seedLittleFSDirectories() {
+    const defaultDirs = ['captures', 'subghz', 'config', 'logs'];
+    for (const d of defaultDirs) {
+        const dp = path.join(STORAGE_DIR, d);
+        if (!fs.existsSync(dp)) fs.mkdirSync(dp, { recursive: true });
+    }
+
+    const sampleFiles = [
+        { path: 'config/bullet.cfg', content: '# Bullet OS System Configuration\nversion=0.2.1\nlanguage=ru\ntheme=cyan\ndisp_mode=ips_240\nwifi_power=20\nids_guard_enabled=1\n' },
+        { path: 'config/wifi_whitelist.json', content: '{\n  "trusted_ssids": ["Home_WiFi", "Office_5G"],\n  "ignored_bssid": ["00:11:22:33:44:55"]\n}\n' },
+        { path: 'logs/ids_guard.log', content: '[2026-08-25 18:20:01] IDS initialized. 802.11 Promiscuous RX ready.\n[2026-08-25 18:20:15] Channel hopping active CH 1..13\n[2026-08-25 18:21:40] Deauth probe baseline clean. 0 bursts.\n' },
+        { path: 'logs/boot.log', content: '[ESP-IDF v5.1.2] Bootloader started @ 240MHz\n[PSRAM] 8MB Octal SPI OK\n[LittleFS] 5.6MB Flash mounted /littlefs\n[CC1101] SPI Transceiver 433.92MHz ready\n' },
+        { path: 'subghz/garage_door_433.92.raw', content: 'RAW_SIGNAL_DATA_433920000Hz_PULSES_180\n+350 -700 +350 -700 +700 -350 +700 -350\n+350 -700 +700 -350 +350 -700 +700 -350\n' },
+        { path: 'subghz/car_fob_keeloq.sub', content: 'Filetype: Flipper SubGhz RAW File\nVersion: 1\nFrequency: 433920000\nPreset: FuriHalSubGhzPreset2FSKDev238k\nProtocol: Keeloq 64bit\n' },
+        { path: 'captures/deauth_burst.pcap', content: 'PCAP_SAMPLE_BURST_CAPTURE_80211_FRAMES' }
+    ];
+
+    for (const f of sampleFiles) {
+        const fp = path.join(STORAGE_DIR, f.path);
+        if (!fs.existsSync(fp)) {
+            fs.writeFileSync(fp, f.content, 'utf-8');
+        }
+    }
+}
+seedLittleFSDirectories();
+
+function sanitizePath(reqPath) {
+    let clean = path.normalize(reqPath || '/').replace(/^(\.\.[\/\\])+/, '');
+    if (clean.startsWith('/') || clean.startsWith('\\')) clean = clean.substring(1);
+    return path.join(STORAGE_DIR, clean);
+}
+
+function getRelativePath(fullPath) {
+    let rel = path.relative(STORAGE_DIR, fullPath).replace(/\\/g, '/');
+    if (!rel || rel === '.') return '/';
+    return '/' + rel;
+}
 
 function getBmpBuffer() {
     if (!isReady) return null;
@@ -204,56 +245,140 @@ const httpServer = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'OK', cmd }));
     } else if (pathname === '/api/files/list') {
+        const reqPath = parsedUrl.searchParams.get('path') || '/';
+        const targetDir = sanitizePath(reqPath);
         try {
-            const files = fs.readdirSync(STORAGE_DIR).map(name => {
-                const stat = fs.statSync(path.join(STORAGE_DIR, name));
+            if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Directory not found' }));
+                return;
+            }
+            const entries = fs.readdirSync(targetDir).map(name => {
+                const fullItemPath = path.join(targetDir, name);
+                const stat = fs.statSync(fullItemPath);
+                const isDir = stat.isDirectory();
                 return {
                     name,
-                    size: stat.size,
+                    path: getRelativePath(fullItemPath),
+                    isDir,
+                    size: isDir ? 0 : stat.size,
                     mtime: stat.mtimeMs,
-                    type: path.extname(name).replace('.', '') || 'bin'
+                    type: isDir ? 'dir' : (path.extname(name).replace('.', '').toLowerCase() || 'bin')
                 };
             });
+            // Sort: directories first, then alphabetically
+            entries.sort((a, b) => {
+                if (a.isDir && !b.isDir) return -1;
+                if (!a.isDir && b.isDir) return 1;
+                return a.name.localeCompare(b.name);
+            });
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(files));
+            res.end(JSON.stringify({
+                currentPath: getRelativePath(targetDir),
+                items: entries
+            }));
         } catch (e) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: e.message }));
         }
+    } else if (pathname === '/api/files/read') {
+        const reqPath = parsedUrl.searchParams.get('path') || '';
+        const targetFile = sanitizePath(reqPath);
+        if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
+            const ext = path.extname(targetFile).toLowerCase();
+            const textExtensions = ['.txt', '.cfg', '.json', '.log', '.csv', '.sub', '.raw', '.sh', '.ini', '.md', '.html', '.js', '.c', '.h', '.cpp'];
+            const isText = textExtensions.includes(ext);
+
+            if (isText) {
+                const textContent = fs.readFileSync(targetFile, 'utf-8');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    name: path.basename(targetFile),
+                    path: getRelativePath(targetFile),
+                    isBinary: false,
+                    size: fs.statSync(targetFile).size,
+                    content: textContent
+                }));
+            } else {
+                // Read binary hex preview (first 256 bytes)
+                const buf = fs.readFileSync(targetFile);
+                const hexLines = [];
+                for (let i = 0; i < Math.min(buf.length, 256); i += 16) {
+                    const chunk = buf.slice(i, i + 16);
+                    const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const ascii = Array.from(chunk).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
+                    hexLines.push(`${i.toString(16).padStart(4, '0')}:  ${hex.padEnd(48, ' ')}  |${ascii}|`);
+                }
+                if (buf.length > 256) hexLines.push(`... [${buf.length - 256} more bytes truncated in preview]`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    name: path.basename(targetFile),
+                    path: getRelativePath(targetFile),
+                    isBinary: true,
+                    size: buf.length,
+                    content: hexLines.join('\n')
+                }));
+            }
+        } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'File not found' }));
+        }
     } else if (pathname === '/api/files/download') {
-        const filename = path.basename(parsedUrl.searchParams.get('name') || '');
-        const filepath = path.join(STORAGE_DIR, filename);
-        if (fs.existsSync(filepath) && fs.statSync(filepath).isFile()) {
+        const reqPath = parsedUrl.searchParams.get('path') || parsedUrl.searchParams.get('name') || '';
+        const targetFile = sanitizePath(reqPath);
+        if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
+            const filename = path.basename(targetFile);
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
             res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-            fs.createReadStream(filepath).pipe(res);
+            fs.createReadStream(targetFile).pipe(res);
         } else {
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('File not found');
         }
     } else if (pathname === '/api/files/upload' && req.method === 'POST') {
+        const reqDir = parsedUrl.searchParams.get('path') || '/';
         const filename = path.basename(parsedUrl.searchParams.get('name') || `upload_${Date.now()}.bin`);
-        const filepath = path.join(STORAGE_DIR, filename);
+        const targetDir = sanitizePath(reqDir);
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+        const filepath = path.join(targetDir, filename);
+
         const fileStream = fs.createWriteStream(filepath);
         req.pipe(fileStream);
         fileStream.on('finish', () => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'OK', name: filename }));
+            res.end(JSON.stringify({ status: 'OK', name: filename, path: getRelativePath(filepath) }));
         });
         fileStream.on('error', (err) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
         });
-    } else if (pathname === '/api/files/delete') {
-        const filename = path.basename(parsedUrl.searchParams.get('name') || '');
-        const filepath = path.join(STORAGE_DIR, filename);
-        if (fs.existsSync(filepath)) {
-            fs.unlinkSync(filepath);
+    } else if (pathname === '/api/files/mkdir') {
+        const reqPath = parsedUrl.searchParams.get('path') || '';
+        const folderName = parsedUrl.searchParams.get('name') || '';
+        const targetDir = sanitizePath(path.join(reqPath, folderName));
+        try {
+            fs.mkdirSync(targetDir, { recursive: true });
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'DELETED', name: filename }));
+            res.end(JSON.stringify({ status: 'OK', path: getRelativePath(targetDir) }));
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
+        }
+    } else if (pathname === '/api/files/delete') {
+        const reqPath = parsedUrl.searchParams.get('path') || parsedUrl.searchParams.get('name') || '';
+        const targetPath = sanitizePath(reqPath);
+        if (fs.existsSync(targetPath)) {
+            const stat = fs.statSync(targetPath);
+            if (stat.isDirectory()) {
+                fs.rmSync(targetPath, { recursive: true, force: true });
+            } else {
+                fs.unlinkSync(targetPath);
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'DELETED', path: reqPath }));
         } else {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('File not found');
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'File not found' }));
         }
     } else if (pathname === '/api/telemetry') {
         res.writeHead(200, { 'Content-Type': 'application/json' });

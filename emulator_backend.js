@@ -328,8 +328,28 @@ const httpServer = http.createServer((req, res) => {
         const targetFile = sanitizePath(reqPath);
         if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
             const filename = path.basename(targetFile);
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-            res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+            const ext = path.extname(targetFile).toLowerCase();
+            const mimeMap = {
+                '.gif': 'image/gif',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.bmp': 'image/bmp',
+                '.webp': 'image/webp',
+                '.svg': 'image/svg+xml',
+                '.ico': 'image/x-icon',
+                '.txt': 'text/plain; charset=utf-8',
+                '.cfg': 'text/plain; charset=utf-8',
+                '.log': 'text/plain; charset=utf-8',
+                '.json': 'application/json',
+                '.pcap': 'application/vnd.tcpdump.pcap'
+            };
+            const contentType = mimeMap[ext] || 'application/octet-stream';
+            res.setHeader('Content-Type', contentType);
+            if (parsedUrl.searchParams.has('dl')) {
+                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            }
+            res.writeHead(200);
             fs.createReadStream(targetFile).pipe(res);
         } else {
             res.writeHead(404, { 'Content-Type': 'text/plain' });

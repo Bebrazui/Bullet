@@ -330,10 +330,12 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
             } else {
               const sizeStr = ((item.size || 0) / 1024).toFixed(1) + ' KB';
               let icon = '📄';
-              if (item.name.endsWith('.pcap')) icon = '📡';
-              else if (item.name.endsWith('.sub') || item.name.endsWith('.raw')) icon = '📻';
-              else if (item.name.endsWith('.cfg') || item.name.endsWith('.json')) icon = '⚙';
-              else if (item.name.endsWith('.log')) icon = '📝';
+              const nameLower = item.name.toLowerCase();
+              if (nameLower.endsWith('.gif') || nameLower.endsWith('.png') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.bmp') || nameLower.endsWith('.webp')) icon = '🖼️';
+              else if (nameLower.endsWith('.pcap')) icon = '📡';
+              else if (nameLower.endsWith('.sub') || nameLower.endsWith('.raw')) icon = '📻';
+              else if (nameLower.endsWith('.cfg') || nameLower.endsWith('.json')) icon = '⚙';
+              else if (nameLower.endsWith('.log')) icon = '📝';
 
               html += '<div class="file-row">' +
                 '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="readFileContent(\'' + itemPath + '\')">' +
@@ -341,8 +343,8 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
                   '<div><div class="f-title">' + item.name + '</div><div class="f-info">' + sizeStr + ' &bullet; ' + (item.type || '').toUpperCase() + '</div></div>' +
                 '</div>' +
                 '<div class="f-btns">' +
-                  '<button class="f-btn" onclick="readFileContent(\'' + itemPath + '\')">👁 Читать</button>' +
-                  '<a class="f-btn" href="/api/files/download?path=' + encodeURIComponent(itemPath) + '" download>⬇</a>' +
+                  '<button class="f-btn" onclick="readFileContent(\'' + itemPath + '\')">' + (icon === '🖼️' ? '👁 Фото/GIF' : '👁 Читать') + '</button>' +
+                  '<a class="f-btn" href="/api/files/download?path=' + encodeURIComponent(itemPath) + '&dl=1" download>⬇</a>' +
                   '<button class="f-btn f-btn-del" onclick="deleteItem(\'' + itemPath + '\')">🗑</button>' +
                 '</div>' +
               '</div>';
@@ -354,6 +356,22 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
     }
 
     function readFileContent(path) {
+      const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+      const imageExts = ['.gif', '.png', '.jpg', '.jpeg', '.bmp', '.webp', '.svg', '.ico'];
+      if (imageExts.includes(ext)) {
+        const fname = path.split('/').pop();
+        document.getElementById('modal-filename').textContent = fname + ' (МЕДИА / GIF)';
+        document.getElementById('modal-meta').textContent = path + ' • Прямой рендер';
+        document.getElementById('modal-content').innerHTML = 
+          '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px; background:#000; border-radius:10px; border:1px solid #1e293b;">' +
+            '<img src="/api/files/download?path=' + encodeURIComponent(path) + '" style="max-width:100%; max-height:340px; object-fit:contain; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.9); image-rendering:pixelated;">' +
+            '<div style="font-size:11px; color:var(--cyan); margin-top:10px; font-weight:bold;">🖼️ Live Photo & Animated GIF Player</div>' +
+          '</div>';
+        document.getElementById('modal-download-btn').href = '/api/files/download?path=' + encodeURIComponent(path) + '&dl=1';
+        document.getElementById('file-modal').style.display = 'flex';
+        return;
+      }
+
       fetch('/api/files/read?path=' + encodeURIComponent(path))
         .then(r => r.json())
         .then(data => {
@@ -361,7 +379,7 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
           document.getElementById('modal-filename').textContent = data.name + (data.isBinary ? ' (HEX DUMP)' : '');
           document.getElementById('modal-meta').textContent = data.path + ' • ' + (data.size / 1024).toFixed(2) + ' KB';
           document.getElementById('modal-content').textContent = data.content;
-          document.getElementById('modal-download-btn').href = '/api/files/download?path=' + encodeURIComponent(data.path);
+          document.getElementById('modal-download-btn').href = '/api/files/download?path=' + encodeURIComponent(data.path) + '&dl=1';
           const modal = document.getElementById('file-modal');
           modal.style.display = 'flex';
         })

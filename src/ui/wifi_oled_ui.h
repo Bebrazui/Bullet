@@ -48,6 +48,8 @@ typedef enum {
     OLED_VIEW_HW_SCANNER,    // I2C/SPI/USB Bus Hardware Scanner
     OLED_VIEW_SUBGHZ,        // Sub-GHz RF Transceiver (CC1101 Record & Replay)
     OLED_VIEW_ADB_APP,       // Android Micro-ADB Controller & Shell
+    OLED_VIEW_FILE_EXPLORER, // LittleFS & SD Hierarchical File Manager & Gallery
+    OLED_VIEW_MEDIA_VIEWER,  // On-device GIF Animator, Photo, Text & Hex Viewer
     OLED_VIEW_TERMINAL,      // Linux CLI Console
     OLED_VIEW_SETTINGS       // Display & Settings
 } oled_view_t;

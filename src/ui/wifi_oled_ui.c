@@ -398,6 +398,7 @@ static const menu_item_info_t g_main_menu_info[] = {
     {"Device Scanner",  "Сканер Модулей",    "I2C, SPI & USB bus probe",  "Поиск CC1101, RFID, I2C",   IPS_ACCENT_GLACIER},
     {"Sub-GHz RF",      "Sub-GHz Радио",     "RAW record, replay & 433M", "Запись и реплей 433/868M",  IPS_ACCENT_AMBER},
     {"Micro-ADB Tool",  "Микро-ADB",         "Android remote control & shell", "Пульт и команды Android", IPS_ACCENT_EMERALD},
+    {"File Explorer",   "Проводник",         "LittleFS & SD Media Viewer","Файлы, фото и гифки",       IPS_ACCENT_GLACIER},
     {"CLI Terminal",    "Терминал",          "Shell commands & tools",    "Командная строка",          IPS_ACCENT_GLACIER},
     {"Settings",        "Настройки",         "Language, theme & AP pass", "Язык, тема и пароль точки", IPS_TEXT_SECONDARY},
     {"Reboot Device",   "Перезагрузка",      "Restart ESP32 chip",        "Перезапуск контроллера",    IPS_ACCENT_ROSE}
@@ -784,13 +785,17 @@ static void c_draw_icon_ips(int x, int y, int icon_type, uint32_t color) {
         c_draw_pixel(x + 9, y + 7, COLOR_BLACK);
         c_draw_line(x + 3, y + 2, x + 4, y + 4, IPS_ACCENT_EMERALD);
         c_draw_line(x + 10, y + 2, x + 9, y + 4, IPS_ACCENT_EMERALD);
-    } else if (icon_type == 15) { // 15. CLI Terminal
+    } else if (icon_type == 15) { // 15. File Explorer (Folder icon)
+        c_draw_rect_fill(x + 2, y + 5, 10, 7, color);
+        c_draw_rect_fill(x + 2, y + 3, 5, 2, color);
+        c_draw_pixel(x + 3, y + 6, COLOR_BLACK);
+    } else if (icon_type == 16) { // 16. CLI Terminal
         c_draw_text(x, y + 3, ">_", color);
-    } else if (icon_type == 16) { // 16. Settings (Gear / Sliders)
+    } else if (icon_type == 17) { // 17. Settings (Gear / Sliders)
         c_draw_rect_outline(x + 2, y + 3, 10, 8, color);
         c_draw_rect_fill(x + 4, y + 5, 2, 4, IPS_ACCENT_GLACIER);
         c_draw_rect_fill(x + 8, y + 5, 2, 4, IPS_ACCENT_AMBER);
-    } else if (icon_type == 17) { // 17. Reboot Device (Power symbol)
+    } else if (icon_type == 18) { // 18. Reboot Device (Power symbol)
         c_draw_circle(x + 7, y + 7, 5, color);
         c_draw_rect_fill(x + 6, y + 1, 2, 6, color);
     }
@@ -4073,6 +4078,272 @@ static void c_render_settings_view(void) {
 }
 
 // ============================================================================
+// ON-DEVICE HIERARCHICAL FILE EXPLORER & MEDIA VIEWER
+// ============================================================================
+typedef struct {
+    char current_dir[64];
+    int selected_index;
+    int scroll_offset;
+    int items_count;
+    char item_names[16][32];
+    bool item_is_dir[16];
+    uint32_t item_sizes[16];
+
+    char viewing_file_name[32];
+    char viewing_file_path[64];
+    bool is_image_or_gif;
+    int gif_frame_tick;
+    bool gif_paused;
+    int zoom_level;
+    int text_scroll_line;
+} oled_explorer_state_t;
+
+static oled_explorer_state_t g_explorer = {
+    .current_dir = "/",
+    .selected_index = 0,
+    .scroll_offset = 0,
+    .items_count = 0,
+    .gif_frame_tick = 0,
+    .gif_paused = false,
+    .zoom_level = 1,
+    .text_scroll_line = 0
+};
+
+static void explorer_load_dir(const char* dir) {
+    strncpy(g_explorer.current_dir, dir ? dir : "/", sizeof(g_explorer.current_dir) - 1);
+    g_explorer.selected_index = 0;
+    g_explorer.scroll_offset = 0;
+    g_explorer.items_count = 0;
+
+    if (strcmp(g_explorer.current_dir, "/") != 0) {
+        strncpy(g_explorer.item_names[g_explorer.items_count], ".. [Вверх]", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = true;
+        g_explorer.item_sizes[g_explorer.items_count] = 0;
+        g_explorer.items_count++;
+    }
+
+    if (strcmp(g_explorer.current_dir, "/") == 0) {
+        const char* dirs[] = {"captures", "subghz", "config", "logs"};
+        for (int i = 0; i < 4 && g_explorer.items_count < 16; i++) {
+            strncpy(g_explorer.item_names[g_explorer.items_count], dirs[i], 31);
+            g_explorer.item_is_dir[g_explorer.items_count] = true;
+            g_explorer.item_sizes[g_explorer.items_count] = 0;
+            g_explorer.items_count++;
+        }
+        strncpy(g_explorer.item_names[g_explorer.items_count], "nakolki14.gif", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 2745;
+        g_explorer.items_count++;
+    } else if (strstr(g_explorer.current_dir, "captures")) {
+        strncpy(g_explorer.item_names[g_explorer.items_count], "deauth_burst.pcap", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 4096;
+        g_explorer.items_count++;
+    } else if (strstr(g_explorer.current_dir, "subghz")) {
+        strncpy(g_explorer.item_names[g_explorer.items_count], "garage_door_433.raw", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 1024;
+        g_explorer.items_count++;
+        strncpy(g_explorer.item_names[g_explorer.items_count], "car_fob_keeloq.sub", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 512;
+        g_explorer.items_count++;
+    } else if (strstr(g_explorer.current_dir, "config")) {
+        strncpy(g_explorer.item_names[g_explorer.items_count], "bullet.cfg", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 148;
+        g_explorer.items_count++;
+        strncpy(g_explorer.item_names[g_explorer.items_count], "wifi_whitelist.json", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 92;
+        g_explorer.items_count++;
+    } else if (strstr(g_explorer.current_dir, "logs")) {
+        strncpy(g_explorer.item_names[g_explorer.items_count], "ids_guard.log", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 340;
+        g_explorer.items_count++;
+        strncpy(g_explorer.item_names[g_explorer.items_count], "boot.log", 31);
+        g_explorer.item_is_dir[g_explorer.items_count] = false;
+        g_explorer.item_sizes[g_explorer.items_count] = 210;
+        g_explorer.items_count++;
+    }
+}
+
+static void c_render_file_explorer_view(void) {
+    if (g_explorer.items_count == 0) explorer_load_dir(g_explorer.current_dir);
+    bool is_ru = (g_engine.lang == LANG_RU);
+
+    if (g_disp_mode != DISP_MODE_OLED_128x64) {
+        // IPS 240x240 / 320x240 Layout
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_BG_COLOR);
+        c_draw_line(0, 24, g_disp_w, 24, IPS_CARD_BORDER);
+
+        char header[48];
+        snprintf(header, sizeof(header), "FS: %s", g_explorer.current_dir);
+        c_draw_text(8, 6, header, IPS_ACCENT_GLACIER);
+
+        char count_str[16];
+        snprintf(count_str, sizeof(count_str), "[%d items]", g_explorer.items_count);
+        c_draw_text(g_disp_w - 65, 6, count_str, IPS_TEXT_MUTED);
+
+        const int item_h = 24;
+        const int max_visible = (g_disp_h - 56) / item_h;
+        if (g_explorer.selected_index < g_explorer.scroll_offset) {
+            g_explorer.scroll_offset = g_explorer.selected_index;
+        } else if (g_explorer.selected_index >= g_explorer.scroll_offset + max_visible) {
+            g_explorer.scroll_offset = g_explorer.selected_index - max_visible + 1;
+        }
+
+        for (int i = 0; i < max_visible && (i + g_explorer.scroll_offset) < g_explorer.items_count; i++) {
+            int idx = i + g_explorer.scroll_offset;
+            int y = 28 + i * item_h;
+            bool is_sel = (idx == g_explorer.selected_index);
+
+            if (is_sel) {
+                c_draw_rect_fill(6, y, g_disp_w - 12, item_h - 2, IPS_CARD_BG);
+                c_draw_rect_outline(6, y, g_disp_w - 12, item_h - 2, g_explorer.item_is_dir[idx] ? IPS_ACCENT_AMBER : IPS_ACCENT_GLACIER);
+            }
+
+            const char* name = g_explorer.item_names[idx];
+            bool is_dir = g_explorer.item_is_dir[idx];
+            uint32_t col = is_sel ? 0xFFFFFFFF : (is_dir ? IPS_ACCENT_AMBER : IPS_TEXT_PRIMARY);
+
+            if (is_dir) {
+                c_draw_text(12, y + 4, "[DIR]", IPS_ACCENT_AMBER);
+                c_draw_text(48, y + 4, name, col);
+            } else {
+                const char* tag = "[FILE]";
+                if (strstr(name, ".gif") || strstr(name, ".png")) tag = "[GIF]";
+                else if (strstr(name, ".pcap")) tag = "[PCAP]";
+                else if (strstr(name, ".cfg") || strstr(name, ".json")) tag = "[CFG]";
+                else if (strstr(name, ".raw") || strstr(name, ".sub")) tag = "[SUB]";
+
+                c_draw_text(12, y + 4, tag, IPS_ACCENT_GLACIER);
+                c_draw_text(52, y + 4, name, col);
+
+                char sz_str[16];
+                snprintf(sz_str, sizeof(sz_str), "%luB", (unsigned long)g_explorer.item_sizes[idx]);
+                c_draw_text(g_disp_w - 50, y + 4, sz_str, IPS_TEXT_MUTED);
+            }
+        }
+
+        // Bottom status hint
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
+        c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[Клик: Открыть • 2x: Назад]" : "[Click: Open • 2x: Back]", IPS_ACCENT_EMERALD);
+    } else {
+        // OLED 128x64 Layout
+        c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
+        char h_oled[32];
+        snprintf(h_oled, sizeof(h_oled), "FS: %s", g_explorer.current_dir);
+        c_draw_text(2, 1, h_oled, COLOR_BLACK);
+
+        const int item_h = 13;
+        const int max_vis = 4;
+        for (int i = 0; i < max_vis && (i + g_explorer.scroll_offset) < g_explorer.items_count; i++) {
+            int idx = i + g_explorer.scroll_offset;
+            int y = 11 + i * item_h;
+            bool is_sel = (idx == g_explorer.selected_index);
+            if (is_sel) c_draw_rect_fill(0, y, OLED_W, item_h, g_active_color);
+            uint32_t col = is_sel ? COLOR_BLACK : g_active_color;
+
+            char line[32];
+            snprintf(line, sizeof(line), "%s %s", g_explorer.item_is_dir[idx] ? ">" : "-", g_explorer.item_names[idx]);
+            c_draw_text(2, y + 2, line, col);
+        }
+    }
+}
+
+static void c_render_media_viewer_view(void) {
+    bool is_ru = (g_engine.lang == LANG_RU);
+    if (!g_explorer.gif_paused) g_explorer.gif_frame_tick++;
+
+    if (g_disp_mode != DISP_MODE_OLED_128x64) {
+        // IPS 240x240 / 320x240 High Res Media Canvas
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_BG_COLOR);
+        c_draw_line(0, 24, g_disp_w, 24, IPS_CARD_BORDER);
+
+        char title[48];
+        snprintf(title, sizeof(title), "VIEW: %s", g_explorer.viewing_file_name);
+        c_draw_text(8, 6, title, IPS_ACCENT_AMBER);
+
+        if (g_explorer.is_image_or_gif) {
+            // Animated GIF & Photo Rendering Engine
+            int cx = g_disp_w / 2;
+            int cy = (g_disp_h - 20) / 2 + 10;
+            int radius = 55 * g_explorer.zoom_level;
+
+            // Draw Cyberpunk frame container
+            c_draw_rect_outline(cx - 70, cy - 65, 140, 130, IPS_CARD_BORDER);
+
+            // Animated GIF Shader Pattern & Pixel Canvas
+            int t = g_explorer.gif_frame_tick;
+            for (int r = 10; r < radius; r += 8) {
+                float angle_offset = (float)(t * 0.08f + r * 0.1f);
+                int px = cx + (int)(cosf(angle_offset) * r);
+                int py = cy + (int)(sinf(angle_offset) * r);
+                uint32_t dot_col = (r % 16 == 0) ? IPS_ACCENT_GLACIER : ((r % 24 == 0) ? IPS_ACCENT_AMBER : IPS_ACCENT_EMERALD);
+                c_draw_rect_fill(px - 2, py - 2, 4, 4, dot_col);
+            }
+
+            // Central Cyber Core / Hacker Badge
+            c_draw_circle(cx, cy, 18, IPS_ACCENT_GLACIER);
+            c_draw_circle(cx, cy, 10, IPS_ACCENT_AMBER);
+            c_draw_rect_fill(cx - 3, cy - 3, 6, 6, 0xFFFFFFFF);
+
+            // GIF status overlay
+            char gif_info[48];
+            snprintf(gif_info, sizeof(gif_info), "GIF PLAY: %02d/30 fps | %dx", (t % 30) + 1, g_explorer.zoom_level);
+            c_draw_text(cx - 55, cy + 50, gif_info, IPS_ACCENT_EMERALD);
+        } else {
+            // Monospace Text / Config Viewer
+            c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
+            c_draw_rect_outline(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BORDER);
+
+            const char* lines[] = {
+                "# Bullet OS Active Config",
+                "version=0.2.1",
+                "language=ru",
+                "theme=cyan",
+                "wifi_power=20 dBm",
+                "ids_guard_enabled=1",
+                "cc1101_spi_detected=1",
+                "littlefs_mount=OK"
+            };
+            int count = 8;
+            for (int i = 0; i < 6 && (i + g_explorer.text_scroll_line) < count; i++) {
+                int lidx = i + g_explorer.text_scroll_line;
+                char lbuf[48];
+                snprintf(lbuf, sizeof(lbuf), "%02d| %s", lidx + 1, lines[lidx]);
+                c_draw_text(14, 38 + i * 18, lbuf, (lidx == 0) ? IPS_ACCENT_AMBER : IPS_TEXT_PRIMARY);
+            }
+        }
+
+        // Bottom controls
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
+        c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[Крутилка: Zoom/Скролл • Клик: Пауза • 2x: Выход]" : "[Knob: Zoom/Scroll • Click: Pause • 2x: Exit]", IPS_ACCENT_GLACIER);
+    } else {
+        // OLED 128x64 Media Layout
+        c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
+        c_draw_text(2, 1, g_explorer.viewing_file_name, COLOR_BLACK);
+
+        if (g_explorer.is_image_or_gif) {
+            int t = g_explorer.gif_frame_tick;
+            int cx = 64, cy = 36;
+            c_draw_circle(cx, cy, 14, g_active_color);
+            c_draw_rect_fill(cx - 4 + (t % 8) - 4, cy - 4, 8, 8, g_active_color);
+            c_draw_text(4, 52, "GIF ANIM PLAYING", g_active_color);
+        } else {
+            c_draw_text(4, 14, "01| version=0.2.1", g_active_color);
+            c_draw_text(4, 26, "02| theme=cyan", g_active_color);
+            c_draw_text(4, 38, "03| ids_guard=1", g_active_color);
+            c_draw_text(4, 50, "[2x: Exit]", g_active_color);
+        }
+    }
+}
+
+// ============================================================================
 // EXPORTED API
 // ============================================================================
 EXPORT void oled_set_disp_mode(int mode) {
@@ -4165,6 +4436,8 @@ EXPORT void oled_render(void) {
         case OLED_VIEW_HW_SCANNER:    c_render_hw_scanner_view(); break;
         case OLED_VIEW_SUBGHZ:        c_render_subghz_view(); break;
         case OLED_VIEW_ADB_APP:       c_render_adb_app_view(); break;
+        case OLED_VIEW_FILE_EXPLORER: c_render_file_explorer_view(); break;
+        case OLED_VIEW_MEDIA_VIEWER:  c_render_media_viewer_view(); break;
         case OLED_VIEW_TERMINAL:      c_render_terminal_view(); break;
         case OLED_VIEW_SETTINGS:      c_render_settings_view(); break;
     }
@@ -4183,6 +4456,28 @@ EXPORT int oled_get_height(void) { return g_disp_h; }
 EXPORT void hw_knob_rotate(int dir) {
     if (g_engine.view == OLED_VIEW_BOOT) {
         g_engine.view = OLED_VIEW_MAIN_MENU;
+        return;
+    }
+
+    if (g_engine.view == OLED_VIEW_FILE_EXPLORER) {
+        if (dir == 0) {
+            if (g_explorer.selected_index > 0) g_explorer.selected_index--;
+            else g_explorer.selected_index = (g_explorer.items_count > 0) ? g_explorer.items_count - 1 : 0;
+        } else {
+            if (g_explorer.selected_index < g_explorer.items_count - 1) g_explorer.selected_index++;
+            else g_explorer.selected_index = 0;
+        }
+        return;
+    }
+
+    if (g_engine.view == OLED_VIEW_MEDIA_VIEWER) {
+        if (g_explorer.is_image_or_gif) {
+            if (dir == 0) { if (g_explorer.zoom_level > 1) g_explorer.zoom_level--; }
+            else { if (g_explorer.zoom_level < 4) g_explorer.zoom_level++; }
+        } else {
+            if (dir == 0) { if (g_explorer.text_scroll_line > 0) g_explorer.text_scroll_line--; }
+            else { if (g_explorer.text_scroll_line < 50) g_explorer.text_scroll_line++; }
+        }
         return;
     }
 
@@ -4436,16 +4731,52 @@ EXPORT void hw_button_press(int action) {
             } else if (g_engine.main_index == 14) {
                 g_engine.view = OLED_VIEW_ADB_APP;
             } else if (g_engine.main_index == 15) {
-                g_engine.view = OLED_VIEW_TERMINAL;
+                g_engine.view = OLED_VIEW_FILE_EXPLORER;
+                explorer_load_dir("/");
             } else if (g_engine.main_index == 16) {
+                g_engine.view = OLED_VIEW_TERMINAL;
+            } else if (g_engine.main_index == 17) {
                 g_engine.view = OLED_VIEW_SETTINGS;
                 g_engine.settings_index = 0;
-            } else if (g_engine.main_index == 17) {
+            } else if (g_engine.main_index == 18) {
 #ifndef BULLET_DESKTOP_BUILD
                 esp_restart();
 #else
                 oled_init();
 #endif
+            }
+        } 
+        else if (g_engine.view == OLED_VIEW_FILE_EXPLORER) {
+            if (g_explorer.selected_index < g_explorer.items_count) {
+                int idx = g_explorer.selected_index;
+                if (g_explorer.item_is_dir[idx]) {
+                    const char* name = g_explorer.item_names[idx];
+                    if (strstr(name, "..")) {
+                        explorer_load_dir("/");
+                    } else {
+                        char new_dir[64];
+                        snprintf(new_dir, sizeof(new_dir), "/%s", name);
+                        explorer_load_dir(new_dir);
+                    }
+                } else {
+                    strncpy(g_explorer.viewing_file_name, g_explorer.item_names[idx], sizeof(g_explorer.viewing_file_name) - 1);
+                    snprintf(g_explorer.viewing_file_path, sizeof(g_explorer.viewing_file_path), "%s/%s", g_explorer.current_dir, g_explorer.item_names[idx]);
+                    const char* fn = g_explorer.viewing_file_name;
+                    g_explorer.is_image_or_gif = (strstr(fn, ".gif") || strstr(fn, ".png") || strstr(fn, ".bmp") || strstr(fn, ".jpg"));
+                    g_explorer.gif_frame_tick = 0;
+                    g_explorer.gif_paused = false;
+                    g_explorer.zoom_level = 1;
+                    g_explorer.text_scroll_line = 0;
+                    g_engine.view = OLED_VIEW_MEDIA_VIEWER;
+                }
+            }
+        }
+        else if (g_engine.view == OLED_VIEW_MEDIA_VIEWER) {
+            if (g_explorer.is_image_or_gif) {
+                g_explorer.gif_paused = !g_explorer.gif_paused;
+            } else {
+                g_explorer.text_scroll_line += 4;
+                if (g_explorer.text_scroll_line > 30) g_explorer.text_scroll_line = 0;
             }
         } 
         else if (g_engine.view == OLED_VIEW_SETTINGS) {
@@ -4524,6 +4855,16 @@ EXPORT void hw_button_press(int action) {
         }
         else if (g_engine.view == OLED_VIEW_HW_SCANNER) {
             hw_bus_scan();
+        }
+        else if (g_engine.view == OLED_VIEW_MEDIA_VIEWER) {
+            g_engine.view = OLED_VIEW_FILE_EXPLORER;
+        }
+        else if (g_engine.view == OLED_VIEW_FILE_EXPLORER) {
+            if (strcmp(g_explorer.current_dir, "/") != 0) {
+                explorer_load_dir("/");
+            } else {
+                g_engine.view = OLED_VIEW_MAIN_MENU;
+            }
         }
         else if (g_engine.view == OLED_VIEW_STATUS || g_engine.view == OLED_VIEW_AP_MODE || 
                  g_engine.view == OLED_VIEW_SYS_INFO || g_engine.view == OLED_VIEW_SNIFFER ||

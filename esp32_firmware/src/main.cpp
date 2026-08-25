@@ -12,6 +12,7 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "wifi_oled_ui.h"
+#include "drivers/cc1101_driver.h"
 
 // Hardware AP Configuration
 const char *ap_ssid = "Bullet-Setup";
@@ -183,6 +184,21 @@ void setup() {
 
     // Initialize C UI Engine
     oled_init();
+
+#ifndef QEMU_EMULATION
+    Serial.println("[SPI] Probing CC1101 Sub-GHz Transceiver (CS=10, SCK=12, MOSI=11, MISO=13)...");
+    bool cc_found = cc1101_hw_init(/*cs=*/10, /*sck=*/12, /*mosi=*/11, /*miso=*/13, /*gdo0=*/14, /*gdo2=*/21);
+    if (cc_found) {
+        Serial.println("[CC1101] Hardware detected & initialized (433.92MHz OOK/ASK Mode)");
+        wifi_ui_set_cc1101_detected(true);
+    } else {
+        Serial.println("[CC1101] Not detected on SPI bus (Pin CS=10). Module optional.");
+        wifi_ui_set_cc1101_detected(false);
+    }
+#else
+    Serial.println("[CC1101] Initialized (QEMU Virtual Transceiver)");
+    wifi_ui_set_cc1101_detected(true);
+#endif
 
 #ifndef QEMU_EMULATION
     // Start SoftAP & Station mode

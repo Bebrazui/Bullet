@@ -562,4 +562,7 @@ void loop() {
         lastTelemetryMs = now;
         updateHardwareTelemetry();
     }
+
+    // FreeRTOS CPU yield for power optimization & IDLE watchdog
+    delay(2);
 }

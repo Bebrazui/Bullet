@@ -1,0 +1,18 @@
+# Build artifacts
+.pio/
+.vscode/
+*.bin
+*.elf
+*.raw
+
+# Heavy dependencies & tools
+emsdk/
+node_modules/
+lvgl_wasm_repo/
+
+# OS / Python caches
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db

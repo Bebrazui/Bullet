@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bullet — 1 Knob + 1 Button Hardware Controller</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Google+Sans+Flex:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <style>
+    :root {
+      --bg: #05070a;
+      --card-bg: #0e141f;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #70d6ff;
+      --accent-green: #38eb7b;
+      --accent-amber: #fbb824;
+      --text: #f8fafc;
+      --text-muted: #64748b;
+      --spring: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Google Sans Flex', -apple-system, BlinkMacSystemFont, sans-serif; user-select: none; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 12px;
+      gap: 14px;
+    }
+
+    .main-app {
+      max-width: 520px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* Top Display Mode Switcher */
+    .mode-bar {
+      display: flex;
+      gap: 6px;
+      background: #0d121c;
+      padding: 4px;
+      border-radius: 9999px;
+      border: 1px solid var(--card-border);
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      border-radius: 9999px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .mode-btn.active {
+      background: #1e293b;
+      color: var(--accent-cyan);
+      box-shadow: 0 0 14px rgba(112, 214, 255, 0.2);
+    }
+
+    .mode-btn.ips-active {
+      background: #1e293b;
+      color: var(--accent-green);
+      box-shadow: 0 0 14px rgba(56, 235, 123, 0.2);
+    }
+
+    /* Screen Bezel Chassis */
+    .screen-frame {
+      padding: 14px;
+      background: radial-gradient(circle at center, #0c121e 0%, #030508 100%);
+      border: 2px solid #1a2538;
+      border-radius: 22px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.3s var(--spring);
+      position: relative;
+    }
+
+    #canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #000;
+      display: block;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .mode-oled #canvas {
+      width: 440px;
+      height: 220px;
+      max-width: 90vw;
+      border: 1px solid #111827;
+    }
+
+    .mode-ips #canvas {
+      width: 360px;
+      height: 360px;
+      max-width: 88vw;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 0 30px rgba(112, 214, 255, 0.08);
+    }
+
+    .mode-cyd #canvas {
+      width: 440px;
+      height: 330px;
+      max-width: 90vw;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 0 30px rgba(112, 214, 255, 0.08);
+    }
+
+    .mode-hvga #canvas {
+      width: 480px;
+      height: 320px;
+      max-width: 92vw;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 0 35px rgba(112, 214, 255, 0.1);
+    }
+
+    /* Hardware Controls: 1 Knob + 1 Button ONLY */
+    .hardware-rig {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 22px;
+      padding: 16px 18px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .rig-title {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .rig-title span.badge {
+      background: rgba(112, 214, 255, 0.15);
+      color: var(--accent-cyan);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    /* Physical Rotary Knob Widget */
+    .knob-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .knob-controls-pair {
+      display: flex;
+      gap: 8px;
+    }
+
+    .knob-turn-btn {
+      background: #151e2e;
+      border: 1px solid #283952;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+
+    .knob-turn-btn:active {
+      background: var(--accent-cyan);
+      color: #000;
+      transform: scale(0.92);
+    }
+
+    /* Push Button Unit */
+    .button-unit {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .push-btn-main {
+      background: linear-gradient(135deg, #1e2e47 0%, #101a29 100%);
+      border: 2px solid var(--accent-cyan);
+      color: var(--text-primary);
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(112, 214, 255, 0.2);
+      transition: all 0.15s;
+    }
+
+    .push-btn-main:active {
+      background: var(--accent-cyan);
+      color: #000;
+      transform: scale(0.94);
+    }
+
+    .sub-actions-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .sub-btn {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+
+    .sub-btn:active {
+      background: var(--accent-amber);
+      color: #000;
+    }
+
+    /* Web Companion for Phone Input */
+    .phone-companion {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 14px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .mobile-input-row { display: flex; gap: 8px; }
+
+    .mobile-input-box {
+      flex: 1;
+      background: #06090e;
+      border: 1px solid #222f42;
+      border-radius: 12px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 0.88rem;
+      font-family: 'Roboto Mono', monospace;
+      outline: none;
+    }
+
+    .mobile-input-box:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(112, 214, 255, 0.2);
+    }
+
+    .send-btn {
+      background: var(--accent-cyan);
+      color: #000;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .quick-chips-row {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .quick-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 0.74rem;
+      font-family: 'Roboto Mono', monospace;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .quick-chip:hover {
+      background: rgba(112, 214, 255, 0.15);
+      color: var(--accent-cyan);
+    }
+
+    .manual-hint {
+      font-size: 0.72rem;
+      color: #64748b;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="main-app">
+
+    <!-- Top Display Switcher -->
+    <div class="mode-bar">
+      <button class="mode-btn" id="btn-oled" onclick="switchDisplay(0)">
+        <span class="material-symbols-rounded" style="font-size: 16px;">tv</span>
+        OLED 128×64
+      </button>
+      <button class="mode-btn ips-active" id="btn-ips" onclick="switchDisplay(1)">
+        <span class="material-symbols-rounded" style="font-size: 16px;">palette</span>
+        IPS 240×240
+      </button>
+      <button class="mode-btn" id="btn-cyd" onclick="switchDisplay(2)">
+        <span class="material-symbols-rounded" style="font-size: 16px;">aspect_ratio</span>
+        CYD 320×240
+      </button>
+      <button class="mode-btn" id="btn-hvga" onclick="switchDisplay(3)">
+        <span class="material-symbols-rounded" style="font-size: 16px;">desktop_windows</span>
+        HVGA 480×320
+      </button>
+    </div>
+
+    <!-- Screen Canvas -->
+    <div class="screen-frame mode-ips" id="screen-container">
+      <canvas id="canvas" width="240" height="240" title="Прокрутите колесико мыши для вращения крутилки или кликните!"></canvas>
+    </div>
+
+    <!-- HARDWARE RIG: 1 ROTARY ENCODER + 1 PUSH BUTTON -->
+    <div class="hardware-rig">
+      <div class="rig-title">
+        <span>АППАРАТНЫЙ ПУЛЬТ ESP32-S3</span>
+        <span class="badge">1 КРУТИЛКА + 1 КНОПКА</span>
+      </div>
+
+      <div class="controls-row">
+        <!-- Rotary Encoder Knob -->
+        <div class="knob-unit">
+          <div class="knob-controls-pair">
+            <button class="knob-turn-btn" onclick="turnKnob(0)" title="Вращение влево / вверх">
+              <span class="material-symbols-rounded" style="font-size: 18px;">rotate_left</span>
+              Влево ◄
+            </button>
+            <button class="knob-turn-btn" onclick="turnKnob(1)" title="Вращение вправо / вниз">
+              Вправо ►
+              <span class="material-symbols-rounded" style="font-size: 18px;">rotate_right</span>
+            </button>
+          </div>
+          <span style="font-size: 0.68rem; color: #64748b;">ЭНКОДЕР (СКРОЛЛ / ОБЗОР)</span>
+        </div>
+
+        <!-- Single Push Button -->
+        <div class="button-unit">
+          <button class="push-btn-main" onclick="pressButton(0)">
+            <span class="material-symbols-rounded" style="font-size: 18px;">radio_button_checked</span>
+            КЛИК (ENTER)
+          </button>
+          <div class="sub-actions-row">
+            <button class="sub-btn" onclick="pressButton(1)" title="Двойной клик на кнопку">2x Клик (Ломать)</button>
+            <button class="sub-btn" onclick="pressButton(2)" title="Долгое нажатие на кнопку (Назад)">Удержание (Назад)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Web Companion for Mobile Keyboard Typing -->
+    <div class="phone-companion">
+      <div class="rig-title">
+        <span>ВВОД С ТЕЛЕФОНА (КЛАВИАТУРА ДЛЯ ТЕРМИНАЛА И ПАРОЛЕЙ)</span>
+        <span style="color: var(--accent-green); font-size: 0.72rem; display: flex; align-items: center; gap: 4px;">
+          <span class="material-symbols-rounded" style="font-size: 14px;">wifi_tethering</span>
+          ONLINE
+        </span>
+      </div>
+
+      <div class="mobile-input-row">
+        <input type="text" id="mobile-text-input" class="mobile-input-box" placeholder="Ввести команду (craft, scan...) или пароль" autocomplete="off" autocorrect="off" autocapitalize="none">
+        <button class="send-btn" onclick="sendMobileInput()">Ввод</button>
+      </div>
+
+      <div class="quick-chips-row">
+        <div class="quick-chip" onclick="quickSend('adb devices')">📱 adb devices</div>
+        <div class="quick-chip" onclick="quickSend('adb key power')">⚡ adb key power</div>
+        <div class="quick-chip" onclick="quickSend('adb reboot recovery')">🛠️ adb recovery</div>
+        <div class="quick-chip" onclick="quickSend('neofetch')">🐧 neofetch</div>
+        <div class="quick-chip" onclick="quickSend('hw scan')">🔌 hw scan</div>
+        <div class="quick-chip" onclick="quickSend('devices')">🔍 devices</div>
+        <div class="quick-chip" onclick="quickSend('dino')">🦖 dino</div>
+        <div class="quick-chip" onclick="quickSend('kart')">🏎️ kart</div>
+        <div class="quick-chip" onclick="quickSend('ids')">🛡 ids</div>
+        <div class="quick-chip" onclick="quickSend('probe')">🎯 probe</div>
+        <div class="quick-chip" onclick="quickSend('matrix')">🟢 matrix</div>
+        <div class="quick-chip" onclick="quickSend('sniff')">📡 sniff</div>
+        <div class="quick-chip" onclick="quickSend('ble')">ble radar</div>
+        <div class="quick-chip" onclick="quickSend('fft')">fft</div>
+        <div class="quick-chip" onclick="quickSend('pong')">pong</div>
+        <div class="quick-chip" onclick="quickSend('scan')">scan</div>
+        <div class="quick-chip" onclick="quickSend('status')">status</div>
+        <div class="quick-chip" onclick="quickSend('ap')">ap</div>
+        <div class="quick-chip" onclick="quickSend('reboot')">reboot</div>
+      </div>
+    </div>
+
+    <div class="manual-hint">
+      🎮 <strong>Управление ESP32-S3 (1 энкодер + 1 кнопка):</strong><br>
+      • <strong>В меню:</strong> крутите энкодер для скролла, кликните для выбора, зажмите для возврата.<br>
+      • На ПК клавиши: <strong>Стрелки / W / S</strong> (крутилка), <strong>Enter</strong> (клик), <strong>ESC</strong> (удержание).
+    </div>
+
+  </div>
+
+  <script>
+    let isLoaded = false, canvas, ctx, imgData;
+    let currentMode = 1; // Default to Color IPS
+    let lastFrameTime = 0;
+    const FRAME_INTERVAL = 1000 / 60;
+
+    var Module = {
+      print: function(text) { console.log(text); },
+      printErr: function(text) { console.error(text); },
+      onRuntimeInitialized: function() {
+        isLoaded = true;
+        canvas = document.getElementById("canvas");
+        ctx = canvas.getContext("2d", { alpha: false });
+        ctx.imageSmoothingEnabled = false;
+
+        Module._oled_init();
+        Module._oled_set_disp_mode(1);
+        updateCanvasSize(240, 240);
+        setUiMode(1);
+
+        // Mouse wheel directly turns the rotary knob
+        canvas.addEventListener("wheel", (e) => {
+          e.preventDefault();
+          if (e.deltaY < 0) turnKnob(0);
+          else turnKnob(1);
+        }, { passive: false });
+
+        // Canvas click sends button press
+        canvas.addEventListener("click", () => {
+          pressButton(0);
+        });
+
+        const loop = (time) => {
+          if (time - lastFrameTime >= FRAME_INTERVAL) {
+            lastFrameTime = time;
+
+            if (typeof Module._oled_get_disp_mode === 'function') {
+              const cMode = Module._oled_get_disp_mode();
+              if (cMode !== currentMode) {
+                setUiMode(cMode);
+              }
+            }
+
+            if (typeof Module._oled_render === 'function') {
+              Module._oled_render();
+            }
+
+            const ptr = (typeof Module._oled_get_fb === 'function') ? Module._oled_get_fb() : 0;
+            let w = (typeof Module._oled_get_width === 'function') ? Module._oled_get_width() : 240;
+            let h = (typeof Module._oled_get_height === 'function') ? Module._oled_get_height() : 240;
+
+            w = Math.max(1, Math.round(Number(w)) || 240);
+            h = Math.max(1, Math.round(Number(h)) || 240);
+
+            if (!imgData || imgData.width !== w || imgData.height !== h) {
+              updateCanvasSize(w, h);
+            }
+
+            const heap = (Module.HEAPU8 && Module.HEAPU8.buffer) ? Module.HEAPU8 : 
+                         (Module.wasmMemory && Module.wasmMemory.buffer) ? new Uint8Array(Module.wasmMemory.buffer) : null;
+            if (ptr && heap && heap.buffer) {
+              imgData.data.set(new Uint8ClampedArray(heap.buffer, ptr, w * h * 4));
+              ctx.putImageData(imgData, 0, 0);
+            }
+          }
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      }
+    };
+
+    function updateCanvasSize(w, h) {
+      const width = Math.max(1, Math.round(Number(w)) || 240);
+      const height = Math.max(1, Math.round(Number(h)) || 240);
+      canvas.width = width;
+      canvas.height = height;
+      imgData = ctx.createImageData(width, height);
+    }
+
+    function switchDisplay(mode) {
+      if (!isLoaded) return;
+      if (typeof Module._oled_set_disp_mode === 'function') {
+        Module._oled_set_disp_mode(mode);
+      }
+      setUiMode(mode);
+    }
+
+    function setUiMode(mode) {
+      currentMode = mode;
+      const container = document.getElementById("screen-container");
+      const btnOled = document.getElementById("btn-oled");
+      const btnIps = document.getElementById("btn-ips");
+      const btnCyd = document.getElementById("btn-cyd");
+      const btnHvga = document.getElementById("btn-hvga");
+
+      if (btnOled) btnOled.className = (mode === 0) ? "mode-btn active" : "mode-btn";
+      if (btnIps) btnIps.className = (mode === 1) ? "mode-btn ips-active" : "mode-btn";
+      if (btnCyd) btnCyd.className = (mode === 2) ? "mode-btn ips-active" : "mode-btn";
+      if (btnHvga) btnHvga.className = (mode === 3) ? "mode-btn ips-active" : "mode-btn";
+
+      if (mode === 1) container.className = "screen-frame mode-ips";
+      else if (mode === 2) container.className = "screen-frame mode-cyd";
+      else if (mode === 3) container.className = "screen-frame mode-hvga";
+      else container.className = "screen-frame mode-oled";
+    }
+
+    // Hardware Actions
+    function turnKnob(dir) {
+      if (!isLoaded) return;
+      if (typeof Module._hw_knob_rotate === 'function') {
+        Module._hw_knob_rotate(dir);
+      } else {
+        Module._oled_key(dir === 0 ? 0 : 1);
+      }
+    }
+
+    function pressButton(action) {
+      if (!isLoaded) return;
+      if (typeof Module._hw_button_press === 'function') {
+        Module._hw_button_press(action);
+      } else {
+        Module._oled_key(action === 2 ? 3 : 2);
+      }
+    }
+
+    function sendMobileInput() {
+      const inputEl = document.getElementById("mobile-text-input");
+      if (!inputEl) return;
+      const text = inputEl.value.trim();
+      if (!text) return;
+
+      for (let i = 0; i < text.length; i++) {
+        Module._oled_char_input(text.charCodeAt(i));
+      }
+      Module._oled_enter();
+
+      inputEl.value = "";
+      inputEl.blur();
+    }
+
+    function quickSend(cmd) {
+      if (!isLoaded) return;
+      for (let i = 0; i < cmd.length; i++) {
+        Module._oled_char_input(cmd.charCodeAt(i));
+      }
+      Module._oled_enter();
+    }
+
+    // PC Keyboard listener
+    window.addEventListener("keydown", (e) => {
+      if (!isLoaded) return;
+
+      if (document.activeElement === document.getElementById("mobile-text-input")) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendMobileInput();
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        turnKnob(0); // Duck in Dino, CCW in menu
+      } else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        turnKnob(1); // Stand up in Dino, CW in menu
+      } else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        turnKnob(0);
+      } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        turnKnob(1);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        pressButton(0);
+      } else if (e.key === "Escape" || e.key === "Backspace") {
+        e.preventDefault();
+        pressButton(2);
+      } else if (e.key === "q" || e.key === "Q") {
+        pressButton(1); // 2x click
+      } else if (e.key >= "1" && e.key <= "6") {
+        Module._oled_char_input(e.key.charCodeAt(0));
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (!isLoaded) return;
+      if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+        turnKnob(1); // Stand up on key release
+      }
+    });
+
+    // Dynamic script loader with cache-busting timestamp
+    const wasmScript = document.createElement("script");
+    wasmScript.src = "wasm/wifi_oled.js?t=" + Date.now();
+    document.body.appendChild(wasmScript);
+  </script>
+</body>
+</html>

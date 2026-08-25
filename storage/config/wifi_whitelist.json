@@ -1,0 +1,4 @@
+{
+  "trusted_ssids": ["Home_WiFi", "Office_5G"],
+  "ignored_bssid": ["00:11:22:33:44:55"]
+}

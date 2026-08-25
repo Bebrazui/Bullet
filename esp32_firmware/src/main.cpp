@@ -679,6 +679,30 @@ void setup() {
         Serial.println("[FS] LittleFS Mount Failed");
     } else {
         Serial.println("[FS] LittleFS Mounted");
+        // Ensure standard LittleFS directory structure exists
+        if (!LittleFS.exists("/captures")) LittleFS.mkdir("/captures");
+        if (!LittleFS.exists("/subghz")) LittleFS.mkdir("/subghz");
+        if (!LittleFS.exists("/config")) LittleFS.mkdir("/config");
+        if (!LittleFS.exists("/logs")) LittleFS.mkdir("/logs");
+
+        if (!LittleFS.exists("/config/bullet.cfg")) {
+            File cfg = LittleFS.open("/config/bullet.cfg", "w");
+            if (cfg) {
+                cfg.println("# Bullet OS Configuration");
+                cfg.println("version=0.2.1");
+                cfg.println("language=ru");
+                cfg.println("theme=cyan");
+                cfg.println("wifi_tx_power=20");
+                cfg.close();
+            }
+        }
+        if (!LittleFS.exists("/logs/boot.log")) {
+            File logf = LittleFS.open("/logs/boot.log", "w");
+            if (logf) {
+                logf.println("[BOOT] Bullet OS initialized successfully");
+                logf.close();
+            }
+        }
     }
 #else
     Serial.println("[FS] LittleFS Initialized (QEMU VFS)");

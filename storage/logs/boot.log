@@ -1,0 +1,4 @@
+[ESP-IDF v5.1.2] Bootloader started @ 240MHz
+[PSRAM] 8MB Octal SPI OK
+[LittleFS] 5.6MB Flash mounted /littlefs
+[CC1101] SPI Transceiver 433.92MHz ready

@@ -112,6 +112,94 @@ const server = net.createServer((socket) => {
     });
 });
 
+const http = require('http');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+
+function getLocalIp() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return '127.0.0.1';
+}
+
+const localIp = getLocalIp();
+
+// Start HTTP Companion Server for Phone / Browser Control
+const httpServer = http.createServer((req, res) => {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname;
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+    if (pathname === '/api/knob') {
+        const dir = parseInt(parsedUrl.searchParams.get('dir') || '0', 10);
+        if (isReady) Module._hw_knob_rotate(dir);
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+    } else if (pathname === '/api/btn') {
+        const action = parseInt(parsedUrl.searchParams.get('action') || '0', 10);
+        if (isReady) Module._hw_button_press(action);
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+    } else if (pathname === '/api/cmd') {
+        const cmd = parsedUrl.searchParams.get('c') || '';
+        if (isReady && cmd) {
+            for (let i = 0; i < cmd.length; i++) {
+                Module._oled_char_input(cmd.charCodeAt(i));
+            }
+            Module._oled_enter();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'OK', cmd }));
+    } else if (pathname === '/api/telemetry') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            chip: 'ESP32-S3 (Emulator)',
+            cores: 2,
+            freq: 240,
+            temp: 41.5,
+            free_sram: 280000,
+            free_psram: 8388608,
+            uptime: Math.floor(process.uptime()),
+            ip: localIp,
+            mac: 'DC:A6:32:88:99:FF'
+        }));
+    } else {
+        // Serve Web Simulator or Mobile Companion UI
+        const simHtmlPath = path.join(__dirname, 'web_sim', 'index.html');
+        if (fs.existsSync(simHtmlPath)) {
+            let targetFile = pathname === '/' ? simHtmlPath : path.join(__dirname, 'web_sim', pathname);
+            if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
+                const ext = path.extname(targetFile).toLowerCase();
+                const mimeTypes = {
+                    '.html': 'text/html',
+                    '.js': 'application/javascript',
+                    '.wasm': 'application/wasm',
+                    '.css': 'text/css',
+                    '.png': 'image/png'
+                };
+                res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+                fs.createReadStream(targetFile).pipe(res);
+                return;
+            }
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<h1>Bullet OS Web Companion Active</h1><p>Local IP: ${localIp}</p>`);
+    }
+});
+
+httpServer.listen(8080, '0.0.0.0', () => {
+    console.log(`[HTTP Companion] Server running at http://${localIp}:8080 and http://localhost:8080`);
+});
+
 server.listen(50555, '127.0.0.1', () => {
     console.log('EMULATOR_BACKEND_READY');
 });

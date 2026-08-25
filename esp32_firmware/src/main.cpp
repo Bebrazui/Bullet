@@ -177,117 +177,286 @@ void updateHardwareTelemetry() {
 }
 
 // REST Endpoints for Web Companion
-// REST Endpoints & Web Companion Portal for Phone/PC
+// REST Endpoints & Web Companion Portal for Phone/PC (ESP-SCRCPY + File Explorer)
 void handleRoot() {
     const char* html = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bullet OS - Web Companion</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ESP-SCRCPY &bullet; Bullet OS Control</title>
   <style>
-    :root { --bg: #090e11; --card: #121c22; --border: #1e2f38; --cyan: #38ef7d; --blue: #11998e; --amber: #f7971e; --text: #e0f2fe; --muted: #64748b; }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
-    body { background: var(--bg); color: var(--text); padding: 14px; }
-    .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-    .logo { font-size: 20px; font-weight: 900; letter-spacing: 2px; color: var(--cyan); text-shadow: 0 0 10px rgba(56,239,125,0.4); }
-    .badge { background: #0f2d1e; color: var(--cyan); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid var(--cyan); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 14px 0; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-    .card-title { font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-    .card-val { font-size: 16px; font-weight: bold; color: var(--text); }
-    .controls { display: flex; gap: 8px; margin-bottom: 14px; }
-    .btn { flex: 1; background: var(--card); border: 1px solid var(--cyan); color: var(--cyan); padding: 12px 6px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; text-align: center; }
-    .btn:active { background: var(--cyan); color: #000; }
-    .btn-red { border-color: #f43f5e; color: #f43f5e; }
+    :root { --bg: #070a0f; --card: #0f1722; --border: #1e293b; --cyan: #38ef7d; --blue: #38bdf8; --amber: #f59e0b; --rose: #f43f5e; --text: #f1f5f9; --muted: #64748b; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg); color: var(--text); padding: 10px; max-width: 600px; margin: 0 auto; user-select: none; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 18px; font-weight: 900; letter-spacing: 1px; color: var(--cyan); text-shadow: 0 0 12px rgba(56,239,125,0.4); }
+    .status-badge { background: #064e3b; color: #6ee7b7; font-size: 10px; font-weight: bold; padding: 3px 8px; border-radius: 12px; border: 1px solid #059669; }
+    .nav-tabs { display: flex; gap: 6px; margin: 12px 0 8px 0; }
+    .tab-btn { flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--muted); padding: 8px 0; font-size: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; }
+    .tab-btn.active { background: #1e293b; color: var(--cyan); border-color: var(--cyan); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    /* Screen Mirror */
+    .screen-wrap { background: #000; border: 2px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; width: 100%; aspect-ratio: 1/1; max-height: 380px; margin-bottom: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+    .screen-img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+    
+    /* Controls */
+    .dpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+    .btn-ctrl { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 14px 6px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+    .btn-ctrl:active { background: var(--cyan); color: #000; }
+    .btn-click { border-color: var(--cyan); color: var(--cyan); }
+    .btn-back { border-color: var(--rose); color: var(--rose); }
     .btn-amber { border-color: var(--amber); color: var(--amber); }
-    .terminal-box { background: #05080a; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
-    .term-title { font-size: 12px; color: var(--cyan); margin-bottom: 8px; font-weight: bold; }
-    .term-log { height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.5; color: #94a3b8; font-family: monospace; white-space: pre-wrap; margin-bottom: 8px; }
-    .term-input-row { display: flex; gap: 6px; }
-    .term-input { flex: 1; background: #0b1318; border: 1px solid var(--border); border-radius: 4px; color: #fff; padding: 8px; font-family: monospace; outline: none; font-size: 13px; }
-    .term-input:focus { border-color: var(--cyan); }
-    .quick-bar { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; margin-bottom: 8px; }
-    .chip { background: #13222a; border: 1px solid var(--border); color: #38bdf8; font-size: 11px; padding: 4px 8px; border-radius: 12px; cursor: pointer; white-space: nowrap; }
-    .chip:active { background: #38bdf8; color: #000; }
+    
+    /* Explorer */
+    .file-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+    .file-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+    .file-item:last-child { border-bottom: none; }
+    .file-name { font-weight: bold; color: var(--blue); }
+    .file-meta { font-size: 11px; color: var(--muted); }
+    .file-actions { display: flex; gap: 6px; }
+    .btn-sm { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; text-decoration: none; }
+    .btn-sm:active { background: var(--blue); color: #000; }
+    .btn-del { border-color: var(--rose); color: var(--rose); }
+    .dropzone { border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); font-size: 12px; margin-bottom: 10px; cursor: pointer; }
+    .dropzone:active { border-color: var(--cyan); color: var(--cyan); }
+
+    /* Terminal */
+    .term-box { background: #05080c; border: 1px solid var(--border); border-radius: 8px; padding: 10px; height: 260px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #94a3b8; white-space: pre-wrap; line-height: 1.4; margin-bottom: 8px; }
+    .term-input-box { display: flex; gap: 6px; }
+    .term-in { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 6px; color: #fff; padding: 10px; font-family: monospace; outline: none; font-size: 13px; }
+    .term-in:focus { border-color: var(--cyan); }
   </style>
 </head>
 <body>
   <div class="header">
-    <div class="logo">⚡ BULLET OS</div>
-    <div class="badge">HOTSPOT ONLINE</div>
+    <div class="logo">⚡ ESP-SCRCPY</div>
+    <div class="status-badge" id="status-pill">ESP32 ONLINE ●</div>
   </div>
 
-  <div class="grid">
-    <div class="card"><div class="card-title">Device Model</div><div class="card-val" id="t-chip">ESP32-S3</div></div>
-    <div class="card"><div class="card-title">PSRAM / Heap</div><div class="card-val" id="t-mem">8MB Octal</div></div>
-    <div class="card"><div class="card-title">Wi-Fi IP</div><div class="card-val" id="t-ip">192.168.4.1</div></div>
-    <div class="card"><div class="card-title">Uptime</div><div class="card-val" id="t-up">00:00:00</div></div>
+  <div class="nav-tabs">
+    <div class="tab-btn active" onclick="switchTab('screen')">📱 SCRCPY</div>
+    <div class="tab-btn" onclick="switchTab('files')">📁 Проводник</div>
+    <div class="tab-btn" onclick="switchTab('term')">💻 Терминал</div>
   </div>
 
-  <div class="controls">
-    <button class="btn" onclick="sendKnob(0)">◄ LEFT</button>
-    <button class="btn" onclick="sendBtn(0)">● CLICK</button>
-    <button class="btn" onclick="sendKnob(1)">RIGHT ►</button>
-    <button class="btn btn-red" onclick="sendBtn(2)">↩ BACK</button>
+  <!-- TAB 1: SCRCPY LIVE MIRROR & TOUCH PAD -->
+  <div id="tab-screen" class="tab-content active">
+    <div class="screen-wrap" onclick="handleScreenTap(event)">
+      <img id="scr" class="screen-img" src="/api/screen" alt="ESP32 Display">
+    </div>
+
+    <div class="dpad-grid">
+      <button class="btn-ctrl" onclick="sendKnob(0)">◄ LEFT</button>
+      <button class="btn-ctrl btn-click" onclick="sendBtn(0)">● CLICK</button>
+      <button class="btn-ctrl" onclick="sendKnob(1)">RIGHT ►</button>
+      <button class="btn-ctrl btn-amber" onclick="sendBtn(1)">2x DBL</button>
+      <button class="btn-ctrl" onclick="runCmd('matrix')">MATRIX</button>
+      <button class="btn-ctrl btn-back" onclick="sendBtn(2)">↩ BACK</button>
+    </div>
   </div>
 
-  <div class="quick-bar">
-    <div class="chip" onclick="runCmd('pcap start')">▶ PCAP Start</div>
-    <div class="chip" onclick="runCmd('pcap stop')">⏹ PCAP Stop</div>
-    <div class="chip" onclick="window.location.href='/capture.pcap'">⬇ Download .pcap</div>
-    <div class="chip" onclick="runCmd('wifi scan')">📡 Wi-Fi Scan</div>
-    <div class="chip" onclick="runCmd('subghz rx')">📻 Sub-GHz RX</div>
-    <div class="chip" onclick="runCmd('neofetch')">ℹ Specs</div>
+  <!-- TAB 2: FILE EXPLORER & STORAGE -->
+  <div id="tab-files" class="tab-content">
+    <div class="dropzone" onclick="document.getElementById('file-upload').click()">
+      📤 Нажмите для загрузки файла на ESP32 (LittleFS / SD)
+      <input type="file" id="file-upload" style="display:none" onchange="uploadFile(this.files[0])">
+    </div>
+
+    <div class="file-card">
+      <div style="font-size:12px; font-weight:bold; color:var(--muted); margin-bottom:8px;">ХРАНИЛИЩЕ LittleFS / SD КАРТА</div>
+      <div id="file-list">Загрузка файлов...</div>
+    </div>
   </div>
 
-  <div class="terminal-box">
-    <div class="term-title">💻 INTERACTIVE WEB TERMINAL</div>
-    <div class="term-log" id="log">Bullet OS Web Terminal Initialized.
-Type commands below (e.g. 'help', 'pcap start', 'subghz rx').</div>
-    <div class="term-input-row">
-      <input type="text" id="cmd-in" class="term-input" placeholder="Type command..." onkeydown="if(event.key==='Enter') execInput();">
-      <button class="btn btn-amber" style="flex:0; padding:8px 14px;" onclick="execInput();">SEND</button>
+  <!-- TAB 3: LIVE TERMINAL -->
+  <div id="tab-term" class="tab-content">
+    <div class="term-box" id="t-log">ESP32 Terminal Ready. Type commands below...</div>
+    <div class="term-input-box">
+      <input type="text" id="cmd-in" class="term-in" placeholder="Command (e.g. 'wifi scan', 'pcap start')..." onkeydown="if(event.key==='Enter') execCmd();">
+      <button class="btn-ctrl btn-click" style="padding:8px 14px;" onclick="execCmd();">SEND</button>
     </div>
   </div>
 
   <script>
+    function switchTab(t) {
+      document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', ['screen','files','term'][i] === t));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + t).classList.add('active');
+      if (t === 'files') loadFiles();
+    }
+
+    // High speed screen streamer (30 FPS)
+    const imgEl = document.getElementById('scr');
+    let isStreaming = true;
+    function pollFrame() {
+      if (!isStreaming) return;
+      const nextImg = new Image();
+      nextImg.src = '/api/screen?t=' + Date.now();
+      nextImg.onload = () => {
+        imgEl.src = nextImg.src;
+        setTimeout(pollFrame, 33);
+      };
+      nextImg.onerror = () => setTimeout(pollFrame, 150);
+    }
+    pollFrame();
+
+    function handleScreenTap(e) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      if (y > 0.8) sendBtn(2); // Bottom strip = Back
+      else if (x < 0.35) sendKnob(0); // Left = CCW
+      else if (x > 0.65) sendKnob(1); // Right = CW
+      else sendBtn(0); // Center = Click
+    }
+
+    function sendKnob(d) { fetch('/api/knob?dir=' + d).catch(e=>{}); }
+    function sendBtn(a) { fetch('/api/btn?action=' + a).catch(e=>{}); }
+
     function log(msg) {
-      const el = document.getElementById('log');
+      const el = document.getElementById('t-log');
       el.textContent += '\n' + msg;
       el.scrollTop = el.scrollHeight;
     }
-    function sendKnob(d) { fetch('/api/knob?dir=' + d).catch(e=>{}); }
-    function sendBtn(a) { fetch('/api/btn?action=' + a).catch(e=>{}); }
+
     function runCmd(c) {
-      log('esp32-s3:~$ ' + c);
+      log('esp32:~$ ' + c);
       fetch('/api/cmd?c=' + encodeURIComponent(c))
         .then(r => r.json())
-        .then(d => log('[OK] Executed on Bullet OS: ' + c))
-        .catch(e => log('[Error] Command sent'));
+        .then(d => log('[OK] Output received: ' + c))
+        .catch(e => log('[Error] Failed to execute'));
     }
-    function execInput() {
+
+    function execCmd() {
       const inp = document.getElementById('cmd-in');
       const val = inp.value.trim();
       if (!val) return;
       runCmd(val);
       inp.value = '';
     }
-    setInterval(() => {
-      fetch('/api/telemetry').then(r=>r.json()).then(d=>{
-        if (d.chip) document.getElementById('t-chip').textContent = d.chip;
-        if (d.ip) document.getElementById('t-ip').textContent = d.ip;
-        let s = d.uptime || 0;
-        let h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
-        document.getElementById('t-up').textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-      }).catch(e=>{});
-    }, 2000);
+
+    function loadFiles() {
+      const listEl = document.getElementById('file-list');
+      fetch('/api/files/list')
+        .then(r => r.json())
+        .then(files => {
+          if (!files || files.length === 0) {
+            listEl.innerHTML = '<div style="color:var(--muted); padding:10px;">Хранилище пусто. Загрузите файл или запустите PCAP.</div>';
+            return;
+          }
+          listEl.innerHTML = files.map(f => `
+            <div class="file-item">
+              <div>
+                <div class="file-name">${f.name}</div>
+                <div class="file-meta">${(f.size/1024).toFixed(1)} KB &bullet; ${f.type.toUpperCase()}</div>
+              </div>
+              <div class="file-actions">
+                <a class="btn-sm" href="/api/files/download?name=${encodeURIComponent(f.name)}" download>⬇ Скачать</a>
+                <button class="btn-sm btn-del" onclick="deleteFile('${f.name}')">🗑</button>
+              </div>
+            </div>
+          `).join('');
+        })
+        .catch(e => { listEl.innerHTML = '<div style="color:var(--rose);">Ошибка загрузки файлов</div>'; });
+    }
+
+    function uploadFile(file) {
+      if (!file) return;
+      fetch('/api/files/upload?name=' + encodeURIComponent(file.name), {
+        method: 'POST',
+        body: file
+      })
+      .then(r => r.json())
+      .then(d => {
+        alert('Файл ' + file.name + ' успешно загружен на ESP32!');
+        loadFiles();
+      })
+      .catch(e => alert('Ошибка загрузки: ' + e));
+    }
+
+    function deleteFile(name) {
+      if (!confirm('Удалить файл ' + name + ' с ESP32?')) return;
+      fetch('/api/files/delete?name=' + encodeURIComponent(name))
+        .then(r => r.json())
+        .then(() => loadFiles())
+        .catch(e => alert('Ошибка удаления'));
+    }
   </script>
 </body>
 </html>
 )rawliteral";
     server.send(200, "text/html", html);
+}
+
+void handleScreen() {
+    uint8_t* fb = oled_get_fb();
+    int w = oled_get_width();
+    int h = oled_get_height();
+    if (!fb || w <= 0 || h <= 0) {
+        server.send(503, "text/plain", "No Framebuffer");
+        return;
+    }
+
+    uint32_t image_size = w * h * 4;
+    uint32_t file_size = 54 + image_size;
+
+    uint8_t header[54] = {0};
+    header[0] = 'B'; header[1] = 'M';
+    header[2] = (uint8_t)(file_size);
+    header[3] = (uint8_t)(file_size >> 8);
+    header[4] = (uint8_t)(file_size >> 16);
+    header[5] = (uint8_t)(file_size >> 24);
+    header[10] = 54;
+
+    header[14] = 40;
+    header[18] = (uint8_t)(w);
+    header[19] = (uint8_t)(w >> 8);
+    header[22] = (uint8_t)(-h);
+    header[23] = (uint8_t)((-h) >> 8);
+    header[24] = (uint8_t)((-h) >> 16);
+    header[25] = (uint8_t)((-h) >> 24);
+    header[26] = 1;
+    header[28] = 32;
+    header[34] = (uint8_t)(image_size);
+    header[35] = (uint8_t)(image_size >> 8);
+    header[36] = (uint8_t)(image_size >> 16);
+    header[37] = (uint8_t)(image_size >> 24);
+
+    WiFiClient client = server.client();
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: image/bmp");
+    client.println("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+    client.print("Content-Length: ");
+    client.println(file_size);
+    client.println("Connection: close");
+    client.println();
+
+    client.write(header, 54);
+    client.write(fb, image_size);
+}
+
+void handleFilesList() {
+    String json = "[";
+    bool first = true;
+
+    File root = LittleFS.open("/");
+    if (root && root.isDirectory()) {
+        File f = root.openNextFile();
+        while (f) {
+            if (!f.isDirectory()) {
+                if (!first) json += ",";
+                first = false;
+                json += "{\"name\":\"" + String(f.name()) + "\",\"size\":" + String(f.size()) + ",\"type\":\"" + String(f.name()).substring(String(f.name()).lastIndexOf('.') + 1) + "\"}";
+            }
+            f = root.openNextFile();
+        }
+    }
+    json += "]";
+    server.send(200, "application/json", json);
 }
 
 void handleCmd() {
@@ -465,8 +634,10 @@ void setup() {
 
     pcap_logger_init();
 
-    // Web endpoints
+    // Web endpoints (ESP-SCRCPY & File Explorer)
     server.on("/", handleRoot);
+    server.on("/api/screen", handleScreen);
+    server.on("/api/files/list", handleFilesList);
     server.on("/capture.pcap", handlePcapDownload);
     server.on("/api/pcap/download", handlePcapDownload);
     server.on("/api/pcap/start", handlePcapStart);
@@ -478,7 +649,7 @@ void setup() {
     server.on("/api/btn", handleButton);
     server.on("/api/reboot", handleReboot);
     server.begin();
-    Serial.println("[HTTP] Web Server & PCAP Exporter started");
+    Serial.println("[HTTP] ESP-SCRCPY Web Server & File Explorer started");
 #else
     Serial.println("[QEMU] Running in QEMU Emulator!");
     Serial.println("[Control] 'a'/'s'=Knob Left, 'd'/'w'=Knob Right, ' '=Click, 'q'=Back, 'p'=Screen Dump");

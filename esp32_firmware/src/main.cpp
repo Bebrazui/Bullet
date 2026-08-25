@@ -9,6 +9,8 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <Wire.h>
+#include <esp_wifi.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "wifi_oled_ui.h"
@@ -22,7 +24,72 @@ WebServer server(80);
 
 unsigned long lastTelemetryMs = 0;
 unsigned long lastUiTickMs = 0;
+unsigned long lastHopMs = 0;
+uint8_t currentHopChannel = 1;
 bool isScanningWifi = false;
+
+#pragma pack(push, 1)
+typedef struct {
+    int16_t fctl;
+    int16_t duration;
+    uint8_t da[6];
+    uint8_t sa[6];
+    uint8_t bssid[6];
+    int16_t seqctl;
+    unsigned char payload[0];
+} wifi_mgmt_hdr_t;
+#pragma pack(pop)
+
+void IRAM_ATTR wifi_promiscuous_rx_callback(void* buf, wifi_promiscuous_pkt_type_t type) {
+    if (type != WIFI_PKT_MGMT) return;
+    wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
+    wifi_mgmt_hdr_t* mgmt = (wifi_mgmt_hdr_t*)pkt->payload;
+
+    int channel = pkt->rx_ctrl.channel;
+    int8_t rssi = pkt->rx_ctrl.rssi;
+
+    wifi_ui_feed_sniffer_packet(channel, rssi);
+
+    uint16_t fc = mgmt->fctl;
+    // Deauth (0x00C0) or Disassociation (0x00A0)
+    if ((fc & 0x00F0) == 0x00C0 || (fc & 0x00F0) == 0x00A0) {
+        char target_mac[18], bssid_str[18];
+        snprintf(target_mac, sizeof(target_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mgmt->da[0], mgmt->da[1], mgmt->da[2], mgmt->da[3], mgmt->da[4], mgmt->da[5]);
+        snprintf(bssid_str, sizeof(bssid_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2], mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5]);
+        wifi_ui_add_deauth_alert(target_mac, bssid_str, channel, rssi);
+    }
+    // Probe Request (0x0040)
+    else if ((fc & 0x00F0) == 0x0040) {
+        char client_mac[18];
+        snprintf(client_mac, sizeof(client_mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mgmt->sa[0], mgmt->sa[1], mgmt->sa[2], mgmt->sa[3], mgmt->sa[4], mgmt->sa[5]);
+        uint8_t* tags = (uint8_t*)mgmt->payload;
+        int len = pkt->rx_ctrl.sig_len - sizeof(wifi_mgmt_hdr_t);
+        char req_ssid[33] = "Wildcard (Broadcast)";
+        if (len > 2 && tags[0] == 0 && tags[1] > 0 && tags[1] <= 32) {
+            memcpy(req_ssid, &tags[2], tags[1]);
+            req_ssid[tags[1]] = '\0';
+        }
+        wifi_ui_add_probe_request(client_mac, req_ssid, rssi);
+    }
+}
+
+// Real I2C Bus Scanner
+void performRealHardwareBusScan() {
+    Wire.begin(/*SDA=*/8, /*SCL=*/9);
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            if (addr == 0x3C || addr == 0x3D) wifi_ui_set_hw_device_detected(8, true);  // SSD1306 OLED
+            if (addr == 0x76 || addr == 0x77) wifi_ui_set_hw_device_detected(9, true);  // BMP280
+            if (addr == 0x68 || addr == 0x69) wifi_ui_set_hw_device_detected(10, true); // MPU6050
+            if (addr == 0x48)                 wifi_ui_set_hw_device_detected(11, true); // ADS1115
+            if (addr == 0x24)                 wifi_ui_set_hw_device_detected(7, true);  // PN532
+        }
+    }
+}
 
 // Scan surrounding real Wi-Fi networks and feed directly into UI
 void performRealWifiScan() {
@@ -210,6 +277,14 @@ void setup() {
         Serial.println("[mDNS] Responder at http://bullet.local");
     }
 
+    // Start Real 802.11 Promiscuous RX & IDS
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_promiscuous_rx_cb(wifi_promiscuous_rx_callback);
+    Serial.println("[IDS] 802.11 Promiscuous Sniffer & Attack Guard started");
+
+    // Perform hardware bus scan
+    performRealHardwareBusScan();
+
     // Web endpoints
     server.on("/", handleRoot);
     server.on("/api/telemetry", handleTelemetry);
@@ -257,6 +332,14 @@ static void dumpScreenToSerial() {
 void loop() {
 #ifndef QEMU_EMULATION
     server.handleClient();
+
+    // Channel hopping every 150ms for 2.4GHz RF spectrum and promiscuous sniffing
+    unsigned long now_ms = millis();
+    if (now_ms - lastHopMs >= 150) {
+        lastHopMs = now_ms;
+        currentHopChannel = (currentHopChannel % 13) + 1;
+        esp_wifi_set_channel(currentHopChannel, WIFI_SECOND_CHAN_NONE);
+    }
 #endif
 
     // Interactive Serial Keyboard Pipeline

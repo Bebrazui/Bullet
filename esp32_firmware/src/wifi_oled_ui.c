@@ -884,17 +884,12 @@ EXPORT void wifi_ui_add_deauth_alert(const char* target_mac, const char* bssid, 
 // ============================================================================
 static void c_render_deauth_ids_view(void) {
     bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
-
-    // Populate initial sample alerts if empty
-    if (g_deauth_count == 0) {
-        wifi_ui_add_deauth_alert("FF:FF:FF:FF:FF:FF", "DC:A6:32:44:11:02", 6, -42);
-        wifi_ui_add_deauth_alert("88:66:5A:11:F2:39", "00:11:22:33:44:55", 1, -58);
-    }
+    bool is_ru = (g_engine.lang == LANG_RU);
 
     if (is_ips) {
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
         c_draw_rect_fill(0, 0, g_disp_w, 26, IPS_CARD_BG);
-        c_draw_text(16, 10, "WI-FI IDS ATTACK MONITOR", IPS_TEXT_PRIMARY);
+        c_draw_text(16, 10, is_ru ? "WI-FI IDS ДЕТЕКТОР АТАК" : "WI-FI IDS ATTACK MONITOR", IPS_TEXT_PRIMARY);
 
         bool is_alert = (g_deauth_count > 0 && (g_engine.tick / 20) % 2 == 0);
         uint32_t badge_col = is_alert ? IPS_ACCENT_ROSE : IPS_ACCENT_EMERALD;
@@ -908,26 +903,33 @@ static void c_render_deauth_ids_view(void) {
         c_draw_rounded_card(12, 34, card_w, 42, 6, IPS_CARD_BG, is_alert ? IPS_ACCENT_ROSE : IPS_CARD_BORDER);
         char total_str[48];
         snprintf(total_str, sizeof(total_str), "DEAUTH PACKETS: %lu BURSTS", (unsigned long)g_total_deauth_packets);
-        c_draw_text(22, 42, total_str, IPS_ACCENT_ROSE);
-        c_draw_text(22, 56, "CHANNELS: 1..13  STATUS: ACTIVE IDS", IPS_ACCENT_EMERALD);
+        c_draw_text(22, 42, total_str, is_alert ? IPS_ACCENT_ROSE : IPS_ACCENT_EMERALD);
+        c_draw_text(22, 56, is_ru ? "КАНАЛЫ: 1..13  СТАТУС: PROMISCUOUS IDS" : "CHANNELS: 1..13  STATUS: PROMISCUOUS IDS", IPS_ACCENT_EMERALD);
 
         // Alert List
-        c_draw_text(16, 84, "LOGGED ATTACK TARGETS:", IPS_TEXT_MUTED);
-        int start_y = 96;
-        for (int i = 0; i < g_deauth_count && i < 4; i++) {
-            int y = start_y + i * 28;
-            c_draw_rounded_card(12, y, card_w, 25, 4, IPS_CARD_BG, IPS_CARD_BORDER);
+        if (g_deauth_count == 0) {
+            c_draw_rounded_card(12, 88, card_w, 80, 5, 0xFF050B08, IPS_CARD_BORDER);
+            c_draw_text(20, 100, is_ru ? "ЭФИР ЧИСТ (АТАК НЕ ОБНАРУЖЕНО)" : "AIRSPACE SECURE (NO ATTACKS)", IPS_ACCENT_EMERALD);
+            c_draw_text(20, 118, is_ru ? "Детектор слушает Deauth / Disassoc фреймы" : "Monitoring 802.11 Deauth / Disassoc frames", IPS_TEXT_MUTED);
+            c_draw_text(20, 134, is_ru ? "при попытках глушения сетей рядом." : "across 2.4GHz Wi-Fi channels.", IPS_TEXT_MUTED);
+        } else {
+            c_draw_text(16, 84, is_ru ? "ОБНАРУЖЕННЫЕ АТАКИ:" : "LOGGED ATTACK TARGETS:", IPS_TEXT_MUTED);
+            int start_y = 96;
+            for (int i = 0; i < g_deauth_count && i < 4; i++) {
+                int y = start_y + i * 28;
+                c_draw_rounded_card(12, y, card_w, 25, 4, IPS_CARD_BG, IPS_CARD_BORDER);
 
-            char alert_line1[48];
-            snprintf(alert_line1, sizeof(alert_line1), "BSSID: %s (CH%d)", g_deauth_alerts[i].bssid, g_deauth_alerts[i].channel);
-            c_draw_text(20, y + 4, alert_line1, IPS_TEXT_PRIMARY);
+                char alert_line1[48];
+                snprintf(alert_line1, sizeof(alert_line1), "BSSID: %s (CH%d)", g_deauth_alerts[i].bssid, g_deauth_alerts[i].channel);
+                c_draw_text(20, y + 4, alert_line1, IPS_TEXT_PRIMARY);
 
-            char alert_line2[48];
-            snprintf(alert_line2, sizeof(alert_line2), "TARGET: %s  %ddBm", g_deauth_alerts[i].target_mac, g_deauth_alerts[i].rssi);
-            c_draw_text(20, y + 14, alert_line2, IPS_ACCENT_AMBER);
+                char alert_line2[48];
+                snprintf(alert_line2, sizeof(alert_line2), "TARGET: %s  %ddBm", g_deauth_alerts[i].target_mac, g_deauth_alerts[i].rssi);
+                c_draw_text(20, y + 14, alert_line2, IPS_ACCENT_ROSE);
+            }
         }
 
-        c_draw_text(16, g_disp_h - 16, "[Press Knob] Return to Menu", IPS_TEXT_MUTED);
+        c_draw_text(16, g_disp_h - 16, is_ru ? "[Кнопка] Назад в меню" : "[Press Knob] Return to Menu", IPS_TEXT_MUTED);
     } else {
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
         c_draw_text(2, 1, "WI-FI IDS GUARD", COLOR_BLACK);
@@ -937,9 +939,13 @@ static void c_render_deauth_ids_view(void) {
         c_draw_text(2, 12, line1, g_active_color);
 
         if (g_deauth_count > 0) {
-            c_draw_text(2, 24, "SRC: DC:A6:32:44:11 (CH6)", g_active_color);
-            c_draw_text(2, 36, "TGT: BROADCAST BURST", g_active_color);
-            c_draw_text(2, 48, "STATUS: ATTACK DETECTED!", g_active_color);
+            char line2[32];
+            snprintf(line2, sizeof(line2), "SRC: %s", g_deauth_alerts[0].bssid);
+            c_draw_text(2, 24, line2, g_active_color);
+            c_draw_text(2, 36, "STATUS: ATTACK DETECTED!", g_active_color);
+        } else {
+            c_draw_text(2, 24, "STATUS: ARMED & SAFE", g_active_color);
+            c_draw_text(2, 36, "CHANNELS: 1..13 OK", COLOR_OLED_WHITE);
         }
         c_draw_text(2, 56, "[Hold] Back", g_active_color);
     }
@@ -950,13 +956,7 @@ static void c_render_deauth_ids_view(void) {
 // ============================================================================
 static void c_render_probe_sniffer_view(void) {
     bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
-
-    if (g_probe_count == 0) {
-        wifi_ui_add_probe_request("3C:22:FB:41:90", "Home_5GHz_Plus", -52);
-        wifi_ui_add_probe_request("98:F4:AB:12:00", "Starbucks_Guest", -68);
-        wifi_ui_add_probe_request("E0:D5:5E:AA:32", "Tesla_Guest_WiFi", -44);
-        wifi_ui_add_probe_request("14:7D:DA:99:C1", "Office_Corporate", -61);
-    }
+    bool is_ru = (g_engine.lang == LANG_RU);
 
     if (is_ips) {
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
@@ -967,36 +967,49 @@ static void c_render_probe_sniffer_view(void) {
         snprintf(cnt_str, sizeof(cnt_str), "%d DEVICES", g_probe_count);
         c_draw_text(g_disp_w - 75, 10, cnt_str, IPS_ACCENT_AMBER);
 
-        int start_y = 34;
-        const int item_h = 36;
         int card_w = g_disp_w - 24;
-        for (int i = 0; i < g_probe_count && i < 5; i++) {
-            int y = start_y + i * (item_h + 4);
-            bool selected = (i == g_probe_scroll_idx);
 
-            c_draw_rounded_card(12, y, card_w, item_h, 5, selected ? IPS_CARD_HOVER : IPS_CARD_BG, selected ? IPS_ACCENT_GLACIER : IPS_CARD_BORDER);
+        if (g_probe_count == 0) {
+            c_draw_rounded_card(12, 34, card_w, 80, 5, 0xFF050B08, IPS_CARD_BORDER);
+            c_draw_text(20, 46, is_ru ? "СКАНИРОВАНИЕ ЗАПРОСОВ (PROBES)..." : "LISTENING FOR PROBE REQUESTS...", IPS_ACCENT_AMBER);
+            c_draw_text(20, 64, is_ru ? "Смартфоны рядом, ищущие свои Wi-Fi сети," : "Nearby smartphones searching for saved APs", IPS_TEXT_MUTED);
+            c_draw_text(20, 80, is_ru ? "отобразятся в этом списке с MAC и SSID." : "will appear here with MAC & requested SSID.", IPS_TEXT_MUTED);
+        } else {
+            int start_y = 34;
+            const int item_h = 36;
+            for (int i = 0; i < g_probe_count && i < 5; i++) {
+                int y = start_y + i * (item_h + 4);
+                bool selected = (i == g_probe_scroll_idx);
 
-            char line1[48];
-            snprintf(line1, sizeof(line1), "SSID: \"%s\"", g_probes[i].requested_ssid);
-            c_draw_text(22, y + 6, line1, selected ? IPS_TEXT_PRIMARY : IPS_ACCENT_GLACIER);
+                c_draw_rounded_card(12, y, card_w, item_h, 5, selected ? IPS_CARD_HOVER : IPS_CARD_BG, selected ? IPS_ACCENT_GLACIER : IPS_CARD_BORDER);
 
-            char line2[48];
-            snprintf(line2, sizeof(line2), "MAC: %s | %ddB (x%lu)", g_probes[i].client_mac, g_probes[i].rssi, (unsigned long)g_probes[i].seen_count);
-            c_draw_text(22, y + 20, line2, IPS_TEXT_MUTED);
+                char line1[48];
+                snprintf(line1, sizeof(line1), "SSID: \"%s\"", g_probes[i].requested_ssid);
+                c_draw_text(22, y + 6, line1, selected ? IPS_TEXT_PRIMARY : IPS_ACCENT_GLACIER);
+
+                char line2[48];
+                snprintf(line2, sizeof(line2), "MAC: %s | %ddB (x%lu)", g_probes[i].client_mac, g_probes[i].rssi, (unsigned long)g_probes[i].seen_count);
+                c_draw_text(22, y + 20, line2, IPS_TEXT_MUTED);
+            }
         }
 
-        c_draw_text(16, g_disp_h - 16, "[Turn Knob] Scroll | [Btn] Back", IPS_TEXT_MUTED);
+        c_draw_text(16, g_disp_h - 16, is_ru ? "[Крутилка] Список | [Кнопка] Назад" : "[Turn Knob] Scroll | [Btn] Back", IPS_TEXT_MUTED);
     } else {
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
         c_draw_text(2, 1, "PROBE SNIFFER", COLOR_BLACK);
 
-        for (int i = 0; i < g_probe_count && i < 4; i++) {
-            int y = 11 + i * 11;
-            char pline[32];
-            snprintf(pline, sizeof(pline), "> %s", g_probes[i].requested_ssid);
-            c_draw_text(2, y, pline, g_active_color);
+        if (g_probe_count == 0) {
+            c_draw_text(2, 20, "LISTENING 2.4G...", g_active_color);
+            c_draw_text(2, 34, "WAITING PROBES", COLOR_OLED_WHITE);
+        } else {
+            for (int i = 0; i < g_probe_count && i < 4; i++) {
+                int y = 11 + i * 11;
+                char pline[32];
+                snprintf(pline, sizeof(pline), "> %s", g_probes[i].requested_ssid);
+                c_draw_text(2, y, pline, g_active_color);
+            }
         }
-        c_draw_text(2, 56, "[Turn] Scroll [Hold] Back", g_active_color);
+        c_draw_text(2, 56, "[Hold] Back", g_active_color);
     }
 }
 
@@ -1078,16 +1091,12 @@ static void c_render_matrix_rain_view(void) {
 // 4. RF 2.4GHz CHANNEL SNIFFER VIEW
 static void c_render_sniffer_view(void) {
     bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
-
-    g_current_sniff_channel = ((g_engine.tick / 15) % 13) + 1;
-    if (g_engine.tick % 4 == 0) {
-        wifi_ui_feed_sniffer_packet(g_current_sniff_channel, -50);
-    }
+    bool is_ru = (g_engine.lang == LANG_RU);
 
     if (is_ips) {
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
         c_draw_rect_fill(0, 0, g_disp_w, 26, IPS_CARD_BG);
-        c_draw_text(16, 10, "RF 2.4GHz PACKET SNIFFER", IPS_TEXT_PRIMARY);
+        c_draw_text(16, 10, is_ru ? "RF 2.4GHz МОНИТОР КАНАЛОВ" : "RF 2.4GHz PACKET SNIFFER", IPS_TEXT_PRIMARY);
 
         c_draw_rounded_card(g_disp_w - 75, 6, 68, 14, 3, IPS_BG_COLOR, IPS_ACCENT_AMBER);
         c_draw_text(g_disp_w - 69, 9, "LIVE 2.4G", IPS_ACCENT_AMBER);
@@ -1144,17 +1153,16 @@ static void c_render_sniffer_view(void) {
 // 5. BLE RADAR SCANNER VIEW
 static void c_render_ble_radar_view(void) {
     bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
-
-    if (g_ble_count == 0) {
-        wifi_ui_add_ble_device("AirTag (Lost)", "4A:22:98:B1", -54, 1);
-        wifi_ui_add_ble_device("Flipper Zero", "88:21:40:AA", -42, 2);
-        wifi_ui_add_ble_device("Galaxy Watch", "CC:90:12:F4", -68, 3);
-    }
+    bool is_ru = (g_engine.lang == LANG_RU);
 
     if (is_ips) {
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
         c_draw_rect_fill(0, 0, g_disp_w, 26, IPS_CARD_BG);
-        c_draw_text(16, 10, "BLE PROXIMITY RADAR", IPS_TEXT_PRIMARY);
+        c_draw_text(16, 10, is_ru ? "BLE РАДАР УСТРОЙСТВ" : "BLE PROXIMITY RADAR", IPS_TEXT_PRIMARY);
+
+        char cnt_str[24];
+        snprintf(cnt_str, sizeof(cnt_str), "%d BEACONS", g_ble_count);
+        c_draw_text(g_disp_w - 85, 10, cnt_str, g_ble_count > 0 ? IPS_ACCENT_EMERALD : IPS_TEXT_MUTED);
 
         int cx = g_disp_w / 2;
         int cy = g_disp_h / 2 - 8;
@@ -1170,7 +1178,7 @@ static void c_render_ble_radar_view(void) {
         float rad = deg * 3.14159265f / 180.0f;
         c_draw_line(cx, cy, cx + (int)(cosf(rad) * (float)r3), cy + (int)(sinf(rad) * (float)r3), IPS_ACCENT_GLACIER);
 
-        for (int i = 0; i < g_ble_count; i++) {
+        for (int i = 0; i < g_ble_count && i < MAX_BLE_CAPACITY; i++) {
             float angle = (i * 110.0f) * 3.14159265f / 180.0f;
             float dist = (float)(-g_ble_devices[i].rssi - 30) * 1.5f;
             if (dist < 15.0f) dist = 15.0f;
@@ -1188,9 +1196,12 @@ static void c_render_ble_radar_view(void) {
         c_draw_rounded_card(12, g_disp_h - 48, card_w, 40, 5, IPS_CARD_BG, IPS_CARD_BORDER);
         if (g_ble_count > 0) {
             c_draw_text(22, g_disp_h - 41, g_ble_devices[0].name, IPS_TEXT_PRIMARY);
-            char bstr[32];
-            snprintf(bstr, sizeof(bstr), "RSSI: %ddBm | %s", g_ble_devices[0].rssi, g_ble_devices[0].mac);
+            char bstr[48];
+            snprintf(bstr, sizeof(bstr), "RSSI: %ddBm | MAC: %s", g_ble_devices[0].rssi, g_ble_devices[0].mac);
             c_draw_text(22, g_disp_h - 27, bstr, IPS_ACCENT_EMERALD);
+        } else {
+            c_draw_text(22, g_disp_h - 41, is_ru ? "СКАНИРОВАНИЕ BLE ЭФИРА 2.4GHz..." : "SCANNING BLE 2.4GHz...", IPS_ACCENT_AMBER);
+            c_draw_text(22, g_disp_h - 27, is_ru ? "Маяки AirTag, iBeacon и трекеры рядом" : "Active beacons & trackers will appear on radar", IPS_TEXT_MUTED);
         }
     } else {
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
@@ -1200,9 +1211,16 @@ static void c_render_ble_radar_view(void) {
         c_draw_circle(cx, cy, 12, g_active_color);
         c_draw_pixel(cx, cy, g_active_color);
 
-        c_draw_text(65, 16, "AirTag -54dB", g_active_color);
-        c_draw_text(65, 28, "Flipper -42dB", g_active_color);
-        c_draw_text(65, 40, "Watch -68dB", g_active_color);
+        if (g_ble_count > 0) {
+            for (int i = 0; i < g_ble_count && i < 3; i++) {
+                char bstr[24];
+                snprintf(bstr, sizeof(bstr), "%s %ddB", g_ble_devices[i].name, g_ble_devices[i].rssi);
+                c_draw_text(65, 16 + i * 12, bstr, g_active_color);
+            }
+        } else {
+            c_draw_text(65, 20, "SCANNING...", g_active_color);
+            c_draw_text(65, 34, "NO BEACONS", COLOR_OLED_WHITE);
+        }
         c_draw_text(2, 54, "[Hold] Back", g_active_color);
     }
 }
@@ -2155,9 +2173,17 @@ static hw_device_profile_t g_hw_devices[] = {
 #define HW_DEVICES_COUNT (sizeof(g_hw_devices) / sizeof(g_hw_devices[0]))
 
 static int g_hw_scroll_idx = 0;
+static bool g_hw_has_cc1101 = true;
+
+EXPORT void wifi_ui_set_hw_device_detected(int dev_idx, bool detected) {
+    if (dev_idx >= 0 && dev_idx < (int)HW_DEVICES_COUNT) {
+        g_hw_devices[dev_idx].detected = detected;
+        if (dev_idx == 4) g_hw_has_cc1101 = detected;
+    }
+}
 
 EXPORT void hw_bus_scan(void) {
-    // Non-blocking bus probe: system will never crash even if no devices attached
+    // Basic SoC onboard peripherals
     g_hw_devices[0].detected = true;
     g_hw_devices[1].detected = true;
     g_hw_devices[2].detected = true;
@@ -2241,8 +2267,6 @@ static void c_render_hw_scanner_view(void) {
 // ============================================================================
 // 12. SUB-GHZ RF TRANSCEIVER (CC1101 - RECORD & REPLAY)
 // ============================================================================
-static bool g_hw_has_cc1101 = true;
-
 EXPORT void wifi_ui_set_cc1101_detected(bool detected) {
     g_hw_has_cc1101 = detected;
     g_hw_devices[4].detected = detected;

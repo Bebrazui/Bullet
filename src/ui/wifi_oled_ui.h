@@ -134,6 +134,7 @@ void wifi_ui_adb_set_device_info(const char* model, const char* version, int bat
 void wifi_ui_adb_trigger_action(int action_idx);
 void wifi_ui_set_cc1101_detected(bool detected);
 bool wifi_ui_get_cc1101_detected(void);
+void wifi_ui_set_hw_device_detected(int dev_idx, bool detected);
 
 #ifdef __cplusplus
 }

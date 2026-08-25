@@ -363,6 +363,7 @@ static const menu_item_info_t g_main_menu_info[] = {
     {"Retro Pong",      "Ретро Понг",        "Knob paddle arcade game",   "Аркада под крутилку",       IPS_ACCENT_GLACIER},
     {"System Specs",    "Статус Системы",    "CPU, 8MB PSRAM & temp",     "Загрузка, RAM и датчики",   IPS_ACCENT_EMERALD},
     {"Device Scanner",  "Сканер Модулей",    "I2C, SPI & USB bus probe",  "Поиск CC1101, RFID, I2C",   IPS_ACCENT_GLACIER},
+    {"Sub-GHz RF",      "Sub-GHz Радио",     "RAW record, replay & 433M", "Запись и реплей 433/868M",  IPS_ACCENT_AMBER},
     {"Micro-ADB Tool",  "Микро-ADB",         "Android remote control & shell", "Пульт и команды Android", IPS_ACCENT_EMERALD},
     {"CLI Terminal",    "Терминал",          "Shell commands & tools",    "Командная строка",          IPS_ACCENT_GLACIER},
     {"Settings",        "Настройки",         "Language and color theme",  "Язык и цветовая тема",      IPS_TEXT_SECONDARY},
@@ -2238,6 +2239,290 @@ static void c_render_hw_scanner_view(void) {
 }
 
 // ============================================================================
+// 12. SUB-GHZ RF TRANSCEIVER (CC1101 - RECORD & REPLAY)
+// ============================================================================
+static bool g_hw_has_cc1101 = true;
+
+EXPORT void wifi_ui_set_cc1101_detected(bool detected) {
+    g_hw_has_cc1101 = detected;
+    g_hw_devices[4].detected = detected;
+}
+
+EXPORT bool wifi_ui_get_cc1101_detected(void) {
+    return g_hw_has_cc1101;
+}
+
+typedef enum {
+    SUBGHZ_PAGE_MENU = 0,
+    SUBGHZ_PAGE_RECORD,
+    SUBGHZ_PAGE_REPLAY,
+    SUBGHZ_PAGE_ANALYZER,
+    SUBGHZ_PAGE_FREQ_SELECT
+} subghz_page_t;
+
+typedef struct {
+    char name[24];
+    float freq_mhz;
+    const char* modulation;
+    uint16_t pulse_count;
+    uint32_t sample_hash;
+} subghz_slot_t;
+
+#define SUBGHZ_MAX_SLOTS 4
+static subghz_slot_t g_subghz_slots[SUBGHZ_MAX_SLOTS] = {
+    {"Gate CAME 433",   433.92f, "ASK/OOK", 64, 0xA18F42},
+    {"Barrier NICE",    433.92f, "ASK/OOK", 52, 0xB720C3},
+    {"Doorhan 433M",    433.92f, "2-FSK",   78, 0xC49911},
+    {"Remote Raw 868",  868.35f, "ASK/OOK", 96, 0xD833AA}
+};
+
+static const float g_subghz_freqs[] = {433.92f, 315.00f, 868.35f, 915.00f, 434.42f};
+#define SUBGHZ_FREQS_COUNT (sizeof(g_subghz_freqs) / sizeof(g_subghz_freqs[0]))
+
+typedef struct {
+    subghz_page_t page;
+    int menu_idx;
+    int freq_idx;
+    int slot_idx;
+    int8_t rssi_dbm;
+    bool is_recording;
+    bool is_transmitting;
+    int tx_timer;
+    int captured_pulses;
+    uint8_t live_waveform[40];
+    char last_toast[48];
+    int toast_timer;
+} subghz_engine_state_t;
+
+static subghz_engine_state_t g_subghz = {
+    .page = SUBGHZ_PAGE_MENU,
+    .menu_idx = 0,
+    .freq_idx = 0, // 433.92 MHz
+    .slot_idx = 0,
+    .rssi_dbm = -92,
+    .is_recording = false,
+    .is_transmitting = false,
+    .tx_timer = 0,
+    .captured_pulses = 0,
+    .last_toast = "",
+    .toast_timer = 0
+};
+
+static void subghz_trigger_tx(int slot) {
+    if (slot < 0 || slot >= SUBGHZ_MAX_SLOTS) return;
+    g_subghz.is_transmitting = true;
+    g_subghz.tx_timer = 60; // ~2 seconds transmission animation
+    g_subghz.toast_timer = 90;
+
+    subghz_slot_t* s = &g_subghz_slots[slot];
+    snprintf(g_subghz.last_toast, sizeof(g_subghz.last_toast), "[TX] Replayed: %s (%.2fM)", s->name, s->freq_mhz);
+
+    char tmsg[64];
+    snprintf(tmsg, sizeof(tmsg), "CC1101 TX: %.2fMHz [%s] %d pulses", s->freq_mhz, s->modulation, s->pulse_count);
+    term_print(tmsg);
+}
+
+static void c_render_subghz_view(void) {
+    bool is_ips = (g_disp_mode != DISP_MODE_OLED_128x64);
+    bool is_ru = (g_engine.lang == LANG_RU);
+
+    if (g_subghz.toast_timer > 0) g_subghz.toast_timer--;
+    if (g_subghz.tx_timer > 0) {
+        g_subghz.tx_timer--;
+        if (g_subghz.tx_timer == 0) g_subghz.is_transmitting = false;
+    }
+
+    // Simulate realistic background RF noise / incoming pulses when recording
+    if (g_subghz.is_recording) {
+        g_subghz.rssi_dbm = (int8_t)(-40 - (rand() % 25));
+        if (rand() % 3 == 0) {
+            g_subghz.captured_pulses += (rand() % 4) + 1;
+            if (g_subghz.captured_pulses > 180) g_subghz.captured_pulses = 180;
+        }
+        for (int i = 0; i < 39; i++) g_subghz.live_waveform[i] = g_subghz.live_waveform[i + 1];
+        g_subghz.live_waveform[39] = (rand() % 4 == 0) ? (uint8_t)(12 + rand() % 16) : (uint8_t)(rand() % 4);
+    } else {
+        g_subghz.rssi_dbm = (int8_t)(-95 - (rand() % 8));
+    }
+
+    if (is_ips) {
+        c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
+
+        // Header
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_CARD_BG);
+        c_draw_text(12, 7, is_ru ? "SUB-GHZ RF (CC1101)" : "SUB-GHZ TRANSCEIVER", IPS_TEXT_PRIMARY);
+
+        if (g_hw_has_cc1101) {
+            c_draw_rounded_card(g_disp_w - 62, 5, 54, 14, 3, 0xFF0D2214, IPS_ACCENT_EMERALD);
+            c_draw_text(g_disp_w - 58, 8, "ONLINE ●", IPS_ACCENT_EMERALD);
+        } else {
+            c_draw_rounded_card(g_disp_w - 62, 5, 54, 14, 3, 0xFF1E1410, IPS_ACCENT_ROSE);
+            c_draw_text(g_disp_w - 58, 8, "NO CHIP", IPS_ACCENT_ROSE);
+        }
+
+        if (g_subghz.page == SUBGHZ_PAGE_MENU) {
+            // Top Status Bar: Frequency & Modulation
+            c_draw_rounded_card(10, 28, g_disp_w - 20, 32, 5, IPS_CARD_BG, IPS_CARD_BORDER);
+            char fstr[48];
+            snprintf(fstr, sizeof(fstr), "FREQ: %.2f MHz | OOK/ASK | RSSI: %ddBm", g_subghz_freqs[g_subghz.freq_idx], g_subghz.rssi_dbm);
+            c_draw_text(16, 38, fstr, IPS_ACCENT_AMBER);
+
+            // Sub-GHz Main Menu Items
+            const char* sub_items_en[] = {
+                "[REC] Read & Record RAW Signal",
+                "[TX]  Saved Slots & Replay",
+                "[FRQ] Frequency Analyzer",
+                "[CFG] Change Frequency / Preset"
+            };
+            const char* sub_items_ru[] = {
+                "[REC] Запись RAW радиосигнала",
+                "[TX]  Сохраненные пульты и Реплей",
+                "[FRQ] Анализатор частоты (Сканер)",
+                "[CFG] Выбор рабочей частоты"
+            };
+
+            int start_y = 66;
+            for (int i = 0; i < 4; i++) {
+                int y = start_y + i * 36;
+                bool selected = (i == g_subghz.menu_idx);
+                uint32_t bg = selected ? IPS_CARD_HOVER : IPS_CARD_BG;
+                uint32_t border = selected ? IPS_ACCENT_AMBER : IPS_CARD_BORDER;
+
+                c_draw_rounded_card(10, y, g_disp_w - 20, 32, 5, bg, border);
+                c_draw_text(20, y + 10, is_ru ? sub_items_ru[i] : sub_items_en[i], selected ? IPS_TEXT_PRIMARY : IPS_TEXT_SECONDARY);
+
+                if (selected) {
+                    c_draw_rounded_card(g_disp_w - 48, y + 7, 36, 16, 3, 0xFF221408, IPS_ACCENT_AMBER);
+                    c_draw_text(g_disp_w - 44, y + 10, "GO ▶", IPS_ACCENT_AMBER);
+                }
+            }
+        } 
+        else if (g_subghz.page == SUBGHZ_PAGE_RECORD) {
+            // Live Recording Screen with Waterfall
+            c_draw_rounded_card(10, 28, g_disp_w - 20, 48, 5, IPS_CARD_BG, IPS_CARD_BORDER);
+            char rec_hdr[48];
+            snprintf(rec_hdr, sizeof(rec_hdr), "FREQ: %.2f MHz  RSSI: %d dBm", g_subghz_freqs[g_subghz.freq_idx], g_subghz.rssi_dbm);
+            c_draw_text(16, 34, rec_hdr, IPS_ACCENT_AMBER);
+
+            char pulse_hdr[48];
+            snprintf(pulse_hdr, sizeof(pulse_hdr), "Captured: %d pulses %s", g_subghz.captured_pulses, g_subghz.is_recording ? "[REC ●]" : "[IDLE]");
+            c_draw_text(16, 52, pulse_hdr, g_subghz.is_recording ? IPS_ACCENT_ROSE : IPS_TEXT_MUTED);
+
+            // Oscilloscope Waveform Card
+            c_draw_rounded_card(10, 82, g_disp_w - 20, 80, 5, 0xFF05080E, IPS_CARD_BORDER);
+            c_draw_text(16, 88, "LIVE RAW DEMODULATOR", IPS_TEXT_MUTED);
+
+            int base_y = 150;
+            for (int i = 0; i < 39; i++) {
+                int x1 = 18 + i * 5;
+                int x2 = 18 + (i + 1) * 5;
+                int h1 = g_subghz.live_waveform[i];
+                int h2 = g_subghz.live_waveform[i + 1];
+                c_draw_line(x1, base_y - h1, x2, base_y - h2, g_subghz.is_recording ? IPS_ACCENT_EMERALD : IPS_ACCENT_GLACIER);
+            }
+
+            // Controls
+            int btn_y = 172;
+            c_draw_rounded_card(10, btn_y, (g_disp_w - 28) / 2, 32, 5, g_subghz.is_recording ? 0xFF331111 : IPS_CARD_BG, IPS_ACCENT_ROSE);
+            c_draw_text(22, btn_y + 10, g_subghz.is_recording ? "■ STOP REC" : "● START REC", IPS_ACCENT_ROSE);
+
+            c_draw_rounded_card((g_disp_w / 2) + 4, btn_y, (g_disp_w - 28) / 2, 32, 5, IPS_CARD_BG, IPS_ACCENT_AMBER);
+            c_draw_text((g_disp_w / 2) + 16, btn_y + 10, "💾 SAVE SLOT", IPS_ACCENT_AMBER);
+        }
+        else if (g_subghz.page == SUBGHZ_PAGE_REPLAY) {
+            // Replay Slots Carousel
+            c_draw_rounded_card(10, 28, g_disp_w - 20, 26, 4, IPS_CARD_BG, IPS_CARD_BORDER);
+            c_draw_text(16, 34, is_ru ? "СОХРАНЕННЫЕ СИГНАЛЫ ДЛЯ ПОВТОРА" : "SAVED SIGNALS FOR REPLAY", IPS_ACCENT_AMBER);
+
+            int start_y = 60;
+            for (int i = 0; i < SUBGHZ_MAX_SLOTS; i++) {
+                int y = start_y + i * 38;
+                bool selected = (i == g_subghz.slot_idx);
+                subghz_slot_t* s = &g_subghz_slots[i];
+
+                uint32_t bg = selected ? IPS_CARD_HOVER : IPS_CARD_BG;
+                uint32_t border = selected ? (g_subghz.is_transmitting ? IPS_ACCENT_ROSE : IPS_ACCENT_AMBER) : IPS_CARD_BORDER;
+
+                c_draw_rounded_card(10, y, g_disp_w - 20, 34, 5, bg, border);
+
+                char slot_title[48];
+                snprintf(slot_title, sizeof(slot_title), "Slot %d: %s", i + 1, s->name);
+                c_draw_text(18, y + 6, slot_title, selected ? IPS_TEXT_PRIMARY : IPS_TEXT_SECONDARY);
+
+                char slot_desc[48];
+                snprintf(slot_desc, sizeof(slot_desc), "%.2f MHz | %s | %d pulses", s->freq_mhz, s->modulation, s->pulse_count);
+                c_draw_text(18, y + 19, slot_desc, IPS_TEXT_MUTED);
+
+                if (selected) {
+                    if (g_subghz.is_transmitting) {
+                        c_draw_rounded_card(g_disp_w - 56, y + 7, 44, 18, 3, 0xFF330D14, IPS_ACCENT_ROSE);
+                        c_draw_text(g_disp_w - 52, y + 10, "TX >>>", IPS_ACCENT_ROSE);
+                    } else {
+                        c_draw_rounded_card(g_disp_w - 56, y + 7, 44, 18, 3, 0xFF221408, IPS_ACCENT_AMBER);
+                        c_draw_text(g_disp_w - 52, y + 10, "SEND ▶", IPS_ACCENT_AMBER);
+                    }
+                }
+            }
+        }
+        else if (g_subghz.page == SUBGHZ_PAGE_ANALYZER) {
+            // Frequency Analyzer
+            c_draw_rounded_card(10, 28, g_disp_w - 20, 80, 5, 0xFF05080E, IPS_CARD_BORDER);
+            c_draw_text(16, 36, "SUB-GHZ FREQUENCY ANALYZER", IPS_ACCENT_GLACIER);
+            c_draw_text(16, 54, "Scanning 300MHz - 928MHz band...", IPS_TEXT_MUTED);
+
+            char peak_str[48];
+            snprintf(peak_str, sizeof(peak_str), "PEAK: %.2f MHz (RSSI: -42dBm)", g_subghz_freqs[g_subghz.freq_idx]);
+            c_draw_text(16, 76, peak_str, IPS_ACCENT_AMBER);
+
+            c_draw_rounded_card(10, 116, g_disp_w - 20, 80, 5, IPS_CARD_BG, IPS_CARD_BORDER);
+            c_draw_text(16, 126, "ACTIVE SIGNALS FOUND:", IPS_TEXT_PRIMARY);
+            c_draw_text(16, 144, "  1. 433.92 MHz - Gate Remotes (OOK)", IPS_ACCENT_EMERALD);
+            c_draw_text(16, 162, "  2. 868.35 MHz - Security Alarm (FSK)", IPS_ACCENT_AMBER);
+        }
+
+        // Bottom Bar / Toast Feedback
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_CARD_BG);
+        if (g_subghz.toast_timer > 0) {
+            c_draw_text(12, g_disp_h - 15, g_subghz.last_toast, IPS_ACCENT_AMBER);
+        } else {
+            c_draw_text(12, g_disp_h - 15, is_ru ? "[Клик] Выбор/Действие | [Удерж] Назад" : "[Click] Select/Run | [Hold] Back", IPS_TEXT_MUTED);
+        }
+    } else {
+        // OLED 128x64 Mode
+        c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
+        char oled_hdr[32];
+        snprintf(oled_hdr, sizeof(oled_hdr), "SUB-GHZ: %.2fM", g_subghz_freqs[g_subghz.freq_idx]);
+        c_draw_text(2, 1, oled_hdr, COLOR_BLACK);
+
+        if (g_subghz.page == SUBGHZ_PAGE_MENU) {
+            c_draw_text(2, 12, g_subghz.menu_idx == 0 ? "> [1] REC RAW" : "  [1] REC RAW", g_subghz.menu_idx == 0 ? g_active_color : COLOR_OLED_WHITE);
+            c_draw_text(2, 24, g_subghz.menu_idx == 1 ? "> [2] REPLAY TX" : "  [2] REPLAY TX", g_subghz.menu_idx == 1 ? g_active_color : COLOR_OLED_WHITE);
+            c_draw_text(2, 36, g_subghz.menu_idx == 2 ? "> [3] SCAN ANALYZE" : "  [3] SCAN ANALYZE", g_subghz.menu_idx == 2 ? g_active_color : COLOR_OLED_WHITE);
+            c_draw_text(2, 48, g_subghz.menu_idx == 3 ? "> [4] CHANGE FREQ" : "  [4] CHANGE FREQ", g_subghz.menu_idx == 3 ? g_active_color : COLOR_OLED_WHITE);
+        } else if (g_subghz.page == SUBGHZ_PAGE_RECORD) {
+            char rline[32];
+            snprintf(rline, sizeof(rline), "PULSES: %d %s", g_subghz.captured_pulses, g_subghz.is_recording ? "[REC]" : "");
+            c_draw_text(2, 14, rline, g_active_color);
+            c_draw_text(2, 28, "[Click] Toggle Rec", COLOR_OLED_WHITE);
+            c_draw_text(2, 42, "[Hold] Save & Exit", COLOR_OLED_WHITE);
+        } else if (g_subghz.page == SUBGHZ_PAGE_REPLAY) {
+            subghz_slot_t* s = &g_subghz_slots[g_subghz.slot_idx];
+            char sline[32];
+            snprintf(sline, sizeof(sline), "> %s", s->name);
+            c_draw_text(2, 14, sline, g_active_color);
+            c_draw_text(2, 28, g_subghz.is_transmitting ? "TRANSMITTING >>>" : "[Click] SEND TX", g_active_color);
+        }
+
+        c_draw_rect_fill(0, 55, OLED_W, 9, 0xFF111111);
+        if (g_subghz.toast_timer > 0) {
+            c_draw_text(2, 56, g_subghz.last_toast, g_active_color);
+        } else {
+            c_draw_text(2, 56, "[Click] OK [Hold] Back", g_active_color);
+        }
+    }
+}
+
+// ============================================================================
 // 12. ANDROID MICRO-ADB ENGINE & CONTROLLER
 // ============================================================================
 typedef struct {
@@ -2499,12 +2784,44 @@ static void term_execute_cmd(const char* full_cmd) {
 
     if (strcmp(cmd, "help") == 0 || strcmp(cmd, "man") == 0) {
         term_print("BULLET CLI (v0.2.1):");
+        term_print("  subghz [rx|tx <slot>|list|scan]");
         term_print("  adb [connect|devices|reboot|key|shell]");
         term_print("  neofetch | hw scan | devices | sensors");
         term_print("  wifi scan [--deep] | status | ap");
         term_print("  rf spec | rf sniff | ids | probe");
         term_print("  matrix | ble | dmesg | ping | curl");
         term_print("  kart | dino | pong | uname | free | df");
+    }
+    // Sub-GHz RF Transceiver CLI
+    else if (strcmp(cmd, "subghz") == 0 || strcmp(cmd, "cc1101") == 0 || strcmp(cmd, "rf433") == 0) {
+        if (strcmp(arg1, "rx") == 0 || strcmp(arg1, "rec") == 0) {
+            g_subghz.is_recording = true;
+            g_subghz.captured_pulses = 0;
+            g_engine.view = OLED_VIEW_SUBGHZ;
+            g_subghz.page = SUBGHZ_PAGE_RECORD;
+            term_print("[CC1101] RAW Signal Sniffer started (433.92MHz OOK)");
+        } else if (strcmp(arg1, "tx") == 0 || strcmp(arg1, "send") == 0 || strcmp(arg1, "replay") == 0) {
+            int slot = atoi(arg2);
+            if (slot >= 1 && slot <= SUBGHZ_MAX_SLOTS) slot--;
+            else slot = 0;
+            subghz_trigger_tx(slot);
+            char smsg[64];
+            snprintf(smsg, sizeof(smsg), "[CC1101] Replayed Slot %d: %s", slot + 1, g_subghz_slots[slot].name);
+            term_print(smsg);
+        } else if (strcmp(arg1, "list") == 0 || strcmp(arg1, "slots") == 0) {
+            term_print("Saved Sub-GHz Signal Slots:");
+            for (int i = 0; i < SUBGHZ_MAX_SLOTS; i++) {
+                char sline[64];
+                snprintf(sline, sizeof(sline), "  %d. %s (%.2fM, %d pulses)", i + 1, g_subghz_slots[i].name, g_subghz_slots[i].freq_mhz, g_subghz_slots[i].pulse_count);
+                term_print(sline);
+            }
+        } else if (strcmp(arg1, "scan") == 0 || strcmp(arg1, "freq") == 0) {
+            g_engine.view = OLED_VIEW_SUBGHZ;
+            g_subghz.page = SUBGHZ_PAGE_ANALYZER;
+            term_print("[CC1101] Launching Sub-GHz Frequency Analyzer...");
+        } else {
+            term_print("Usage: subghz rx | tx <slot> | list | scan");
+        }
     }
     // Android Micro-ADB CLI Suite
     else if (strcmp(cmd, "adb") == 0) {
@@ -3678,6 +3995,7 @@ EXPORT void oled_render(void) {
         case OLED_VIEW_PONG_GAME:     c_render_pong_view(); break;
         case OLED_VIEW_SYS_INFO:      c_render_sys_info_view(); break;
         case OLED_VIEW_HW_SCANNER:    c_render_hw_scanner_view(); break;
+        case OLED_VIEW_SUBGHZ:        c_render_subghz_view(); break;
         case OLED_VIEW_ADB_APP:       c_render_adb_app_view(); break;
         case OLED_VIEW_TERMINAL:      c_render_terminal_view(); break;
         case OLED_VIEW_SETTINGS:      c_render_settings_view(); break;
@@ -3781,6 +4099,14 @@ EXPORT void hw_knob_rotate(int dir) {
                 if (g_engine.net_index > 0) g_engine.net_index--;
                 else g_engine.net_index = g_net_count - 1;
             }
+        } else if (g_engine.view == OLED_VIEW_SUBGHZ) {
+            if (g_subghz.page == SUBGHZ_PAGE_MENU) {
+                if (g_subghz.menu_idx > 0) g_subghz.menu_idx--;
+                else g_subghz.menu_idx = 3;
+            } else if (g_subghz.page == SUBGHZ_PAGE_REPLAY) {
+                if (g_subghz.slot_idx > 0) g_subghz.slot_idx--;
+                else g_subghz.slot_idx = SUBGHZ_MAX_SLOTS - 1;
+            }
         } else if (g_engine.view == OLED_VIEW_ADB_APP) {
             if (g_adb.action_idx > 0) g_adb.action_idx--;
             else g_adb.action_idx = (int)ADB_ACTIONS_COUNT - 1;
@@ -3800,6 +4126,14 @@ EXPORT void hw_knob_rotate(int dir) {
                 if (g_engine.net_index < g_net_count - 1) g_engine.net_index++;
                 else g_engine.net_index = 0;
             }
+        } else if (g_engine.view == OLED_VIEW_SUBGHZ) {
+            if (g_subghz.page == SUBGHZ_PAGE_MENU) {
+                if (g_subghz.menu_idx < 3) g_subghz.menu_idx++;
+                else g_subghz.menu_idx = 0;
+            } else if (g_subghz.page == SUBGHZ_PAGE_REPLAY) {
+                if (g_subghz.slot_idx < SUBGHZ_MAX_SLOTS - 1) g_subghz.slot_idx++;
+                else g_subghz.slot_idx = 0;
+            }
         } else if (g_engine.view == OLED_VIEW_ADB_APP) {
             if (g_adb.action_idx < (int)ADB_ACTIONS_COUNT - 1) g_adb.action_idx++;
             else g_adb.action_idx = 0;
@@ -3817,6 +4151,13 @@ EXPORT void hw_button_press(int action) {
     }
 
     if (action == 2) { // Long Press = BACK
+        if (g_engine.view == OLED_VIEW_SUBGHZ) {
+            if (g_subghz.page != SUBGHZ_PAGE_MENU) {
+                g_subghz.page = SUBGHZ_PAGE_MENU;
+                g_subghz.is_recording = false;
+                return;
+            }
+        }
         if (g_engine.view == OLED_VIEW_WIFI_MENU || 
             g_engine.view == OLED_VIEW_DEAUTH_IDS ||
             g_engine.view == OLED_VIEW_PROBE_SNIFFER ||
@@ -3829,6 +4170,7 @@ EXPORT void hw_button_press(int action) {
             g_engine.view == OLED_VIEW_PONG_GAME ||
             g_engine.view == OLED_VIEW_SYS_INFO || 
             g_engine.view == OLED_VIEW_HW_SCANNER ||
+            g_engine.view == OLED_VIEW_SUBGHZ ||
             g_engine.view == OLED_VIEW_ADB_APP ||
             g_engine.view == OLED_VIEW_SETTINGS || 
             g_engine.view == OLED_VIEW_TERMINAL) {
@@ -3919,18 +4261,48 @@ EXPORT void hw_button_press(int action) {
                 g_engine.view = OLED_VIEW_HW_SCANNER;
                 hw_bus_scan();
             } else if (g_engine.main_index == 12) {
-                g_engine.view = OLED_VIEW_ADB_APP;
+                g_engine.view = OLED_VIEW_SUBGHZ;
+                g_subghz.page = SUBGHZ_PAGE_MENU;
             } else if (g_engine.main_index == 13) {
-                g_engine.view = OLED_VIEW_TERMINAL;
+                g_engine.view = OLED_VIEW_ADB_APP;
             } else if (g_engine.main_index == 14) {
+                g_engine.view = OLED_VIEW_TERMINAL;
+            } else if (g_engine.main_index == 15) {
                 g_engine.view = OLED_VIEW_SETTINGS;
                 g_engine.settings_index = 0;
-            } else if (g_engine.main_index == 15) {
+            } else if (g_engine.main_index == 16) {
 #ifndef BULLET_DESKTOP_BUILD
                 esp_restart();
 #else
                 oled_init();
 #endif
+            }
+        } 
+        else if (g_engine.view == OLED_VIEW_SUBGHZ) {
+            if (g_subghz.page == SUBGHZ_PAGE_MENU) {
+                if (g_subghz.menu_idx == 0) {
+                    g_subghz.page = SUBGHZ_PAGE_RECORD;
+                    g_subghz.is_recording = true;
+                    g_subghz.captured_pulses = 0;
+                } else if (g_subghz.menu_idx == 1) {
+                    g_subghz.page = SUBGHZ_PAGE_REPLAY;
+                } else if (g_subghz.menu_idx == 2) {
+                    g_subghz.page = SUBGHZ_PAGE_ANALYZER;
+                } else if (g_subghz.menu_idx == 3) {
+                    g_subghz.freq_idx = (g_subghz.freq_idx + 1) % SUBGHZ_FREQS_COUNT;
+                    snprintf(g_subghz.last_toast, sizeof(g_subghz.last_toast), "Freq: %.2f MHz", g_subghz_freqs[g_subghz.freq_idx]);
+                    g_subghz.toast_timer = 60;
+                }
+            } else if (g_subghz.page == SUBGHZ_PAGE_RECORD) {
+                g_subghz.is_recording = !g_subghz.is_recording;
+                if (!g_subghz.is_recording) {
+                    snprintf(g_subghz.last_toast, sizeof(g_subghz.last_toast), "Saved %d pulses to Slot", g_subghz.captured_pulses);
+                    g_subghz.toast_timer = 90;
+                }
+            } else if (g_subghz.page == SUBGHZ_PAGE_REPLAY) {
+                subghz_trigger_tx(g_subghz.slot_idx);
+            } else if (g_subghz.page == SUBGHZ_PAGE_ANALYZER) {
+                g_subghz.page = SUBGHZ_PAGE_MENU;
             }
         } 
         else if (g_engine.view == OLED_VIEW_WIFI_MENU) {

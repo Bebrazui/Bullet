@@ -46,6 +46,7 @@ typedef enum {
     OLED_VIEW_PONG_GAME,     // Retro Paddle Arcade
     OLED_VIEW_SYS_INFO,      // Hardware Dashboard
     OLED_VIEW_HW_SCANNER,    // I2C/SPI/USB Bus Hardware Scanner
+    OLED_VIEW_SUBGHZ,        // Sub-GHz RF Transceiver (CC1101 Record & Replay)
     OLED_VIEW_ADB_APP,       // Android Micro-ADB Controller & Shell
     OLED_VIEW_TERMINAL,      // Linux CLI Console
     OLED_VIEW_SETTINGS       // Display & Settings
@@ -131,6 +132,8 @@ void wifi_ui_add_probe_request(const char* client_mac, const char* requested_ssi
 void wifi_ui_add_deauth_alert(const char* target_mac, const char* bssid, int channel, int8_t rssi);
 void wifi_ui_adb_set_device_info(const char* model, const char* version, int battery, bool is_connected);
 void wifi_ui_adb_trigger_action(int action_idx);
+void wifi_ui_set_cc1101_detected(bool detected);
+bool wifi_ui_get_cc1101_detected(void);
 
 #ifdef __cplusplus
 }

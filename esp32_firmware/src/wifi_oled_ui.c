@@ -44,6 +44,12 @@ static disp_mode_t g_disp_mode = DISP_MODE_IPS_240x240;
 #if defined(BULLET_DESKTOP_BUILD)
 static uint32_t g_fb_static[MAX_DISP_W * MAX_DISP_H];
 static uint32_t* g_fb_rgba = g_fb_static;
+static pcap_status_t g_pcap_dummy_status = { false, 142, 18450, true, "/captures/deauth_burst.pcap" };
+bool pcap_logger_init(void) { return true; }
+bool pcap_logger_start(const char* fn) { g_pcap_dummy_status.is_recording = true; return true; }
+void pcap_logger_stop(void) { g_pcap_dummy_status.is_recording = false; }
+void pcap_logger_get_status(pcap_status_t* out_status) { if (out_status) *out_status = g_pcap_dummy_status; }
+void pcap_logger_clear(void) { g_pcap_dummy_status.total_packets = 0; g_pcap_dummy_status.total_bytes = 0; }
 #else
 static uint32_t* g_fb_rgba = NULL;
 static uint32_t  g_fb_fallback[OLED_W * OLED_H];

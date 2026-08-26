@@ -1,0 +1,136 @@
+{
+  "version": "1.0.0",
+  "repository": "https://github.com/Bebrazui/Bullet",
+  "raw_base_url": "https://raw.githubusercontent.com/Bebrazui/Bullet/main/store",
+  "apps": [
+    {
+      "id": "micropython",
+      "name": "MicroPython REPL & Runner",
+      "category": "system",
+      "icon": "🐍",
+      "version": "1.22.0",
+      "author": "Damien George / Bullet Port",
+      "description": "Интерактивная среда Python 3 для ESP32. Выполнение .py скриптов, доступ к GPIO, Wi-Fi и экрану через модуль bullet.",
+      "size": 4200,
+      "files": [
+        "app.json",
+        "main.py",
+        "repl.py"
+      ]
+    },
+    {
+      "id": "snake",
+      "name": "CyberSnake (Змейка)",
+      "category": "games",
+      "icon": "🎮",
+      "version": "1.1.0",
+      "author": "Bullet Studio",
+      "description": "Классическая аркадная змейка, адаптированная под плавное управление энкодером с таблицей рекордов.",
+      "size": 1850,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "flappy",
+      "name": "Flappy Bullet",
+      "category": "games",
+      "icon": "🐤",
+      "version": "1.0.4",
+      "author": "Bullet Studio",
+      "description": "Культовая аркада: полет между трубами по клику на аппаратную кнопку с физикой гравитации.",
+      "size": 1620,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "timer",
+      "name": "CyberTimer & Pomodoro",
+      "category": "utilities",
+      "icon": "⏱️",
+      "version": "1.2.0",
+      "author": "Bullet Devs",
+      "description": "Таймер продуктивности Pomodoro (25/5), секундомер с засечкой кругов (Laps) и звуковыми сигналами.",
+      "size": 1400,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "weather",
+      "name": "I2C Weather & Sensors",
+      "category": "utilities",
+      "icon": "🌡️",
+      "version": "1.0.2",
+      "author": "SensorsLab",
+      "description": "Дашборд чтения датчиков I2C: BME280, BMP280, AHT10, SHT30 с графиками температуры и давления.",
+      "size": 1950,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "subghz_vault",
+      "name": "Sub-GHz Preset Vault",
+      "category": "radio",
+      "icon": "📻",
+      "version": "2.0.0",
+      "author": "RF-Hacker",
+      "description": "Библиотека готовых радио-пресетов 433.92 МГц (EV1527, PT2262, Came 12-bit) с возможностью отправки в 1 клик.",
+      "size": 2800,
+      "files": [
+        "app.json",
+        "presets.sub",
+        "main.py"
+      ]
+    },
+    {
+      "id": "strobe",
+      "name": "Strobe & Screen Torch",
+      "category": "utilities",
+      "icon": "🔦",
+      "version": "1.0.1",
+      "author": "Bullet Studio",
+      "description": "Фонарик с регулировкой яркости, стробоскоп с настраиваемой частотой (Hz) и тест битых пикселей экрана.",
+      "size": 1200,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "morse",
+      "name": "Morse Code Studio",
+      "category": "radio",
+      "icon": "📡",
+      "version": "1.1.0",
+      "author": "RadioClub",
+      "description": "Генератор азбуки Морзе: перевод текста в аудио- и оптические сигналы + таблица символов.",
+      "size": 1500,
+      "files": [
+        "app.json",
+        "main.py"
+      ]
+    },
+    {
+      "id": "wallpapers",
+      "name": "Hacker GIF & Wallpapers",
+      "category": "media",
+      "icon": "🎨",
+      "version": "1.3.0",
+      "author": "CyberDesign",
+      "description": "Набор анимированных киберпанк-гифок и пиксель-арт обоев для медиаплеера Bullet OS.",
+      "size": 3600,
+      "files": [
+        "app.json",
+        "matrix.gif",
+        "main.py"
+      ]
+    }
+  ]
+}

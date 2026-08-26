@@ -1,0 +1,14 @@
+{
+  "id": "timer",
+  "name": "CyberTimer & Pomodoro",
+  "category": "utilities",
+  "icon": "⏱️",
+  "version": "1.2.0",
+  "author": "Bullet Devs",
+  "description": "Таймер продуктивности Pomodoro (25/5), секундомер с засечкой кругов (Laps) и звуковыми сигналами.",
+  "size": 1400,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

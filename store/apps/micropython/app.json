@@ -1,0 +1,15 @@
+{
+  "id": "micropython",
+  "name": "MicroPython REPL & Runner",
+  "category": "system",
+  "icon": "🐍",
+  "version": "1.22.0",
+  "author": "Damien George / Bullet Port",
+  "description": "Интерактивная среда Python 3 для ESP32. Выполнение .py скриптов, доступ к GPIO, Wi-Fi и экрану через модуль bullet.",
+  "size": 4200,
+  "files": [
+    "app.json",
+    "main.py",
+    "repl.py"
+  ]
+}

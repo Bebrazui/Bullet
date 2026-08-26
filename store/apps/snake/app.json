@@ -1,0 +1,14 @@
+{
+  "id": "snake",
+  "name": "CyberSnake (Змейка)",
+  "category": "games",
+  "icon": "🎮",
+  "version": "1.1.0",
+  "author": "Bullet Studio",
+  "description": "Классическая аркадная змейка, адаптированная под плавное управление энкодером с таблицей рекордов.",
+  "size": 1850,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "subghz_vault",
+  "name": "Sub-GHz Preset Vault",
+  "category": "radio",
+  "icon": "📻",
+  "version": "2.0.0",
+  "author": "RF-Hacker",
+  "description": "Библиотека готовых радио-пресетов 433.92 МГц (EV1527, PT2262, Came 12-bit) с возможностью отправки в 1 клик.",
+  "size": 2800,
+  "files": [
+    "app.json",
+    "presets.sub",
+    "main.py"
+  ]
+}

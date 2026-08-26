@@ -1,0 +1,15 @@
+{
+  "id": "wallpapers",
+  "name": "Hacker GIF & Wallpapers",
+  "category": "media",
+  "icon": "🎨",
+  "version": "1.3.0",
+  "author": "CyberDesign",
+  "description": "Набор анимированных киберпанк-гифок и пиксель-арт обоев для медиаплеера Bullet OS.",
+  "size": 3600,
+  "files": [
+    "app.json",
+    "matrix.gif",
+    "main.py"
+  ]
+}

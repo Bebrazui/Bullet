@@ -1,0 +1,14 @@
+{
+  "id": "strobe",
+  "name": "Strobe & Screen Torch",
+  "category": "utilities",
+  "icon": "🔦",
+  "version": "1.0.1",
+  "author": "Bullet Studio",
+  "description": "Фонарик с регулировкой яркости, стробоскоп с настраиваемой частотой (Hz) и тест битых пикселей экрана.",
+  "size": 1200,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "morse",
+  "name": "Morse Code Studio",
+  "category": "radio",
+  "icon": "📡",
+  "version": "1.1.0",
+  "author": "RadioClub",
+  "description": "Генератор азбуки Морзе: перевод текста в аудио- и оптические сигналы + таблица символов.",
+  "size": 1500,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

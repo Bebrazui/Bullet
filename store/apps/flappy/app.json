@@ -1,0 +1,14 @@
+{
+  "id": "flappy",
+  "name": "Flappy Bullet",
+  "category": "games",
+  "icon": "🐤",
+  "version": "1.0.4",
+  "author": "Bullet Studio",
+  "description": "Культовая аркада: полет между трубами по клику на аппаратную кнопку с физикой гравитации.",
+  "size": 1620,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

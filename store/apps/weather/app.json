@@ -1,0 +1,14 @@
+{
+  "id": "weather",
+  "name": "I2C Weather & Sensors",
+  "category": "utilities",
+  "icon": "🌡️",
+  "version": "1.0.2",
+  "author": "SensorsLab",
+  "description": "Дашборд чтения датчиков I2C: BME280, BMP280, AHT10, SHT30 с графиками температуры и давления.",
+  "size": 1950,
+  "files": [
+    "app.json",
+    "main.py"
+  ]
+}

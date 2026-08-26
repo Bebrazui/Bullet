@@ -7,6 +7,8 @@
 #include "wifi_oled_ui.h"
 #include "logo_bitmap.h"
 #include "drivers/pcap_logger.h"
+#include "runtime/micropython_engine.h"
+#include "network/github_downloader.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -4425,6 +4427,8 @@ typedef struct {
     bool is_downloading;
     int  downloading_app_idx;
     int  download_progress; // 0 - 100
+    uint32_t total_bytes;
+    uint32_t downloaded_bytes;
     char download_status[48];
     // Snake state
     int snake_x, snake_y;
@@ -4452,6 +4456,8 @@ static app_runtime_state_t g_apps_rt = {
     .is_downloading = false,
     .downloading_app_idx = 0,
     .download_progress = 0,
+    .total_bytes = 4620,
+    .downloaded_bytes = 0,
     .download_status = "Connecting...",
     .snake_x = 40, .snake_y = 40, .snake_dir = 1, .snake_len = 4, .food_x = 80, .food_y = 60, .snake_score = 0,
     .bird_y = 60.0f, .bird_vy = 0.0f, .pipe_x = 180, .pipe_gap_y = 80, .flappy_score = 0, .flappy_dead = false,
@@ -4467,6 +4473,8 @@ EXPORT void wifi_ui_set_app_installed(int app_idx, bool installed) {
 EXPORT void wifi_ui_set_download_progress(int app_idx, int progress, const char* status_msg) {
     g_apps_rt.downloading_app_idx = app_idx;
     g_apps_rt.download_progress = progress;
+    if (g_apps_rt.total_bytes == 0) g_apps_rt.total_bytes = 4620;
+    g_apps_rt.downloaded_bytes = (progress * g_apps_rt.total_bytes) / 100;
     if (status_msg) {
         strncpy(g_apps_rt.download_status, status_msg, sizeof(g_apps_rt.download_status) - 1);
         g_apps_rt.download_status[sizeof(g_apps_rt.download_status) - 1] = '\0';
@@ -4491,6 +4499,7 @@ static void c_render_apps_view(void) {
         if (g_apps_rt.download_progress < 100) {
             if (g_apps_rt.runner_tick % 2 == 0) {
                 g_apps_rt.download_progress += 2;
+                g_apps_rt.downloaded_bytes = (g_apps_rt.download_progress * g_apps_rt.total_bytes) / 100;
                 if (g_apps_rt.download_progress == 30) {
                     snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "GET %s/main.py", g_store_apps[g_apps_rt.downloading_app_idx].id);
                 } else if (g_apps_rt.download_progress == 60) {
@@ -4501,6 +4510,7 @@ static void c_render_apps_view(void) {
             }
             if (g_apps_rt.download_progress >= 100) {
                 g_apps_rt.download_progress = 100;
+                g_apps_rt.downloaded_bytes = g_apps_rt.total_bytes;
                 g_apps_rt.is_downloading = false;
                 g_apps_rt.is_installed[g_apps_rt.downloading_app_idx] = true;
                 snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "Installed OK!");
@@ -4530,8 +4540,8 @@ static void c_render_apps_view(void) {
         if (fill_w > bar_w) fill_w = bar_w;
         c_draw_rect_fill(18, 118, fill_w, 10, IPS_ACCENT_GLACIER);
 
-        char pct[32];
-        snprintf(pct, sizeof(pct), "Progress: %d%%", g_apps_rt.download_progress);
+        char pct[48];
+        snprintf(pct, sizeof(pct), "Bytes: %u / %u (%d%%)", g_apps_rt.downloaded_bytes, g_apps_rt.total_bytes, g_apps_rt.download_progress);
         c_draw_text(18, 136, pct, IPS_ACCENT_AMBER);
 
         c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);

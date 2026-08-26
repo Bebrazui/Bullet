@@ -124,7 +124,8 @@ const server = net.createServer((socket) => {
                 const h = Module._oled_get_height();
                 const ptr = Module._oled_get_fb();
                 const byteLen = w * h * 4;
-                const fbBuf = Buffer.from(Module.HEAPU8.buffer, ptr, byteLen);
+                const fbSub = Module.HEAPU8.subarray(ptr, ptr + byteLen);
+                const fbBuf = Buffer.from(fbSub.buffer, fbSub.byteOffset, fbSub.byteLength);
 
                 const hdr = Buffer.alloc(8);
                 hdr.writeUInt32LE(w, 0);
@@ -204,7 +205,8 @@ function getBmpBuffer() {
     const h = Module._oled_get_height();
     const ptr = Module._oled_get_fb();
     const byteLen = w * h * 4;
-    const fbBuf = Buffer.from(Module.HEAPU8.buffer, ptr, byteLen);
+    const fbSub = Module.HEAPU8.subarray(ptr, ptr + byteLen);
+    const fbBuf = Buffer.from(fbSub.buffer, fbSub.byteOffset, fbSub.byteLength);
 
     const hdr = Buffer.alloc(54);
     hdr.write('BM', 0);

@@ -108,6 +108,7 @@
   <div class="tabs">
     <button class="tab active" onclick="selectTab('scrcpy')">📱 SCRCPY</button>
     <button class="tab" onclick="selectTab('files')">📁 Проводник</button>
+    <button class="tab" onclick="selectTab('store')">🛒 Магазин</button>
     <button class="tab" onclick="selectTab('term')">💻 Терминал</button>
   </div>
 
@@ -167,7 +168,33 @@
     </div>
   </div>
 
-  <!-- TAB 3: TERMINAL -->
+  <!-- TAB 3: APP STORE (GITHUB HUB) -->
+  <div id="view-store" class="view">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; background:var(--card); padding:12px; border-radius:12px; border:1px solid var(--border);">
+      <div>
+        <div style="font-size:15px; font-weight:bold; color:#fff; display:flex; align-items:center; gap:6px;">
+          <span>🛒</span> Bullet App Store
+        </div>
+        <div style="font-size:11px; color:var(--cyan); margin-top:2px;" id="store-status">GitHub Live Hub &bullet; Bebrazui/Bullet</div>
+      </div>
+      <button class="f-btn" onclick="fetchStoreCatalog()" style="border-color:var(--cyan); color:var(--cyan); background:#0d281e;">🔄 Обновить</button>
+    </div>
+
+    <div class="quick-chips" style="margin-bottom:12px;">
+      <div class="chip active-chip" id="cat-all" onclick="filterStoreCategory('all')">🌐 Все</div>
+      <div class="chip" id="cat-system" onclick="filterStoreCategory('system')">⚙️ Система</div>
+      <div class="chip" id="cat-games" onclick="filterStoreCategory('games')">🎮 Игры</div>
+      <div class="chip" id="cat-utilities" onclick="filterStoreCategory('utilities')">🛠 Утилиты</div>
+      <div class="chip" id="cat-radio" onclick="filterStoreCategory('radio')">📻 Радио</div>
+      <div class="chip" id="cat-media" onclick="filterStoreCategory('media')">🎨 Медиа</div>
+    </div>
+
+    <div id="store-apps-list" style="display:flex; flex-direction:column; gap:10px;">
+      <div style="text-align:center; padding:20px; color:var(--muted);">Загрузка каталога с GitHub...</div>
+    </div>
+  </div>
+
+  <!-- TAB 4: TERMINAL -->
   <div id="view-term" class="view">
     <div class="term-window" id="term-log">Bullet OS Real-Time Remote Shell Ready.
 Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
@@ -198,12 +225,15 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
 
   <script>
     let currentDir = '/';
+    let rawStoreApps = [];
+    let currentStoreCategory = 'all';
 
     function selectTab(name) {
-      document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['scrcpy','files','term'][i] === name));
+      document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['scrcpy','files','store','term'][i] === name));
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById('view-' + name).classList.add('active');
       if (name === 'files') fetchFiles(currentDir);
+      if (name === 'store') fetchStoreCatalog();
     }
 
     // High Speed Screen Mirroring Engine
@@ -415,6 +445,121 @@ Type command below (e.g. 'help', 'pcap start', 'subghz rx')...</div>
         .then(r => r.json())
         .then(() => fetchFiles(currentDir))
         .catch(e => alert('Ошибка удаления'));
+    }
+
+    // --- BULLET APP STORE ENGINE ---
+    function fetchStoreCatalog() {
+      const listEl = document.getElementById('store-apps-list');
+      const statusEl = document.getElementById('store-status');
+      listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);">Запрос каталога с GitHub raw...</div>';
+      
+      fetch('/api/store/catalog')
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            listEl.innerHTML = '<div style="color:var(--rose); padding:10px;">Ошибка загрузки каталога: ' + data.error + '</div>';
+            return;
+          }
+          rawStoreApps = data.apps || [];
+          statusEl.textContent = 'GitHub Live Hub (v' + (data.version || '1.0.0') + ') • Источник: ' + (data.source === 'github_live' ? '🟢 GitHub CDN' : '🟡 Локальный кэш');
+          renderStoreApps();
+        })
+        .catch(err => {
+          listEl.innerHTML = '<div style="color:var(--rose); padding:10px;">Не удалось связаться с сервером: ' + err + '</div>';
+        });
+    }
+
+    function filterStoreCategory(cat) {
+      currentStoreCategory = cat;
+      document.querySelectorAll('#view-store .chip').forEach(c => c.style.background = '#0f1c2e');
+      const activeBtn = document.getElementById('cat-' + cat);
+      if (activeBtn) activeBtn.style.background = 'var(--blue)';
+      renderStoreApps();
+    }
+
+    function renderStoreApps() {
+      const listEl = document.getElementById('store-apps-list');
+      if (!rawStoreApps || rawStoreApps.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);">Каталог пуст</div>';
+        return;
+      }
+
+      const filtered = currentStoreCategory === 'all' 
+        ? rawStoreApps 
+        : rawStoreApps.filter(a => a.category === currentStoreCategory);
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);">Нет приложений в этой категории</div>';
+        return;
+      }
+
+      let html = '';
+      for (const app of filtered) {
+        const sizeStr = (app.size / 1024).toFixed(1) + ' KB';
+        const isInst = !!app.installed;
+
+        html += '<div style="background:var(--card); border:1px solid ' + (isInst ? 'var(--cyan)' : 'var(--border)') + '; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.4);">' +
+          '<div style="display:flex; justify-content:space-between; align-items:flex-start;">' +
+            '<div style="display:flex; gap:12px; align-items:center;">' +
+              '<div style="font-size:26px; width:44px; height:44px; background:#0b111c; border:1px solid #1e293b; border-radius:10px; display:flex; align-items:center; justify-content:center;">' + (app.icon || '📦') + '</div>' +
+              '<div>' +
+                '<div style="font-size:14px; font-weight:bold; color:#fff;">' + app.name + '</div>' +
+                '<div style="font-size:11px; color:var(--muted); margin-top:2px;">v' + (app.version || '1.0') + ' &bullet; ' + (app.author || 'Community') + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<span style="font-size:10px; text-transform:uppercase; font-weight:bold; padding:3px 8px; border-radius:8px; background:' + (isInst ? '#0d281e; color:var(--cyan); border:1px solid var(--cyan)' : '#1e293b; color:var(--muted)') + ';">' + (isInst ? 'Установлено' : app.category) + '</span>' +
+          '</div>' +
+          '<div style="font-size:12px; color:#94a3b8; line-height:1.4;">' + app.description + '</div>' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #1a2538; padding-top:10px;">' +
+            '<div style="font-size:11px; color:var(--muted);">' + sizeStr + ' &bullet; LittleFS: /apps/' + app.id + '</div>' +
+            '<div style="display:flex; gap:6px;">' +
+              (isInst 
+                ? '<button class="f-btn" onclick="launchStoreApp(\'' + app.id + '\')" style="background:#0d281e; border-color:var(--cyan); color:var(--cyan);">🚀 Запустить</button>' +
+                  '<button class="f-btn f-btn-del" onclick="uninstallStoreApp(\'' + app.id + '\', this)">🗑</button>'
+                : '<button class="f-btn" onclick="installStoreApp(\'' + app.id + '\', this)" style="background:#0e1e24; border-color:var(--blue); color:var(--blue);">📥 Установить (GitHub)</button>'
+              ) +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+      listEl.innerHTML = html;
+    }
+
+    function installStoreApp(appId, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Загрузка с GitHub...'; }
+      fetch('/api/store/install?app=' + encodeURIComponent(appId), { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { alert('Ошибка установки: ' + data.error); }
+          else {
+            fetchStoreCatalog();
+          }
+        })
+        .catch(e => {
+          alert('Сбой скачивания: ' + e);
+          if (btn) { btn.disabled = false; btn.textContent = '📥 Установить'; }
+        });
+    }
+
+    function uninstallStoreApp(appId, btn) {
+      if (!confirm('Удалить приложение "' + appId + '" из памяти ESP32?')) return;
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Удаление...'; }
+      fetch('/api/store/uninstall?app=' + encodeURIComponent(appId), { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          fetchStoreCatalog();
+        })
+        .catch(e => alert('Сбой удаления: ' + e));
+    }
+
+    function launchStoreApp(appId) {
+      fetch('/api/store/launch?app=' + encodeURIComponent(appId), { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          selectTab('scrcpy');
+          runCmd('app run ' + appId);
+        })
+        .catch(e => alert('Не удалось запустить: ' + e));
     }
   </script>
 </body>

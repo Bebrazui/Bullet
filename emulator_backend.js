@@ -1,6 +1,32 @@
 const net = require('net');
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { exec, execSync } = require('child_process');
 const Module = require('./web_sim/wasm/wifi_oled.js');
+
+function fetchFromUrl(url) {
+    return new Promise((resolve, reject) => {
+        const client = url.startsWith('https') ? https : http;
+        const req = client.get(url, { headers: { 'User-Agent': 'Bullet-OS-AppStore/1.0' } }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchFromUrl(res.headers.location).then(resolve).catch(reject);
+            }
+            if (res.statusCode !== 200) {
+                return reject(new Error(`HTTP ${res.statusCode}`));
+            }
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+        });
+        req.on('error', reject);
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('Timeout'));
+        });
+    });
+}
 
 const ADB_BIN = 'C:\\Android\\sdk\\platform-tools\\adb.exe';
 
@@ -112,10 +138,7 @@ const server = net.createServer((socket) => {
     });
 });
 
-const http = require('http');
 const os = require('os');
-const fs = require('fs');
-const path = require('path');
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -400,6 +423,109 @@ const httpServer = http.createServer((req, res) => {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'File not found' }));
         }
+    } else if (pathname === '/api/store/catalog') {
+        const manifestUrl = 'https://raw.githubusercontent.com/Bebrazui/Bullet/main/store/manifest.json';
+        const appsDir = path.join(STORAGE_DIR, 'apps');
+        if (!fs.existsSync(appsDir)) fs.mkdirSync(appsDir, { recursive: true });
+
+        const installedSet = new Set(fs.existsSync(appsDir) ? fs.readdirSync(appsDir) : []);
+
+        const sendCatalog = (manifestObj, source) => {
+            const appsWithStatus = (manifestObj.apps || []).map(app => ({
+                ...app,
+                installed: installedSet.has(app.id),
+                installedPath: installedSet.has(app.id) ? `/apps/${app.id}` : null
+            }));
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({
+                version: manifestObj.version,
+                source: source,
+                apps: appsWithStatus
+            }));
+        };
+
+        fetchFromUrl(manifestUrl)
+            .then(buf => {
+                const manifest = JSON.parse(buf.toString('utf-8'));
+                sendCatalog(manifest, 'github_live');
+            })
+            .catch(err => {
+                console.log('[Store] GitHub live fetch fallback to local:', err.message);
+                const localManifestPath = path.join(__dirname, 'store', 'manifest.json');
+                if (fs.existsSync(localManifestPath)) {
+                    const manifest = JSON.parse(fs.readFileSync(localManifestPath, 'utf-8'));
+                    sendCatalog(manifest, 'local_repo');
+                } else {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                }
+            });
+    } else if (pathname === '/api/store/install') {
+        const appId = parsedUrl.searchParams.get('app');
+        if (!appId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing app id' }));
+            return;
+        }
+
+        const localManifestPath = path.join(__dirname, 'store', 'manifest.json');
+        let manifest = null;
+        if (fs.existsSync(localManifestPath)) {
+            try { manifest = JSON.parse(fs.readFileSync(localManifestPath, 'utf-8')); } catch(e) {}
+        }
+        
+        const appInfo = manifest ? manifest.apps.find(a => a.id === appId) : null;
+        const filesToDownload = (appInfo && appInfo.files) ? appInfo.files : ['app.json', 'main.py'];
+
+        const targetAppDir = path.join(STORAGE_DIR, 'apps', appId);
+        if (!fs.existsSync(targetAppDir)) fs.mkdirSync(targetAppDir, { recursive: true });
+
+        const downloadPromises = filesToDownload.map(file => {
+            const rawUrl = `https://raw.githubusercontent.com/Bebrazui/Bullet/main/store/apps/${appId}/${file}`;
+            const targetFilePath = path.join(targetAppDir, file);
+            return fetchFromUrl(rawUrl)
+                .then(buf => {
+                    fs.writeFileSync(targetFilePath, buf);
+                    return { file, status: 'downloaded_github' };
+                })
+                .catch(err => {
+                    const localSrc = path.join(__dirname, 'store', 'apps', appId, file);
+                    if (fs.existsSync(localSrc)) {
+                        fs.copyFileSync(localSrc, targetFilePath);
+                        return { file, status: 'copied_local' };
+                    }
+                    throw err;
+                });
+        });
+
+        Promise.all(downloadPromises)
+            .then(results => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'OK', app: appId, installed: true, results }));
+            })
+            .catch(err => {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            });
+    } else if (pathname === '/api/store/uninstall') {
+        const appId = parsedUrl.searchParams.get('app');
+        const targetAppDir = path.join(STORAGE_DIR, 'apps', appId);
+        if (fs.existsSync(targetAppDir)) {
+            fs.rmSync(targetAppDir, { recursive: true, force: true });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'OK', app: appId, installed: false }));
+        } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'App not found' }));
+        }
+    } else if (pathname === '/api/store/launch') {
+        const appId = parsedUrl.searchParams.get('app') || 'micropython';
+        if (Module && Module._oled_key) {
+            // Navigate to Apps menu or trigger app
+            console.log(`[Store] Launching app: ${appId}`);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'LAUNCHED', app: appId }));
     } else if (pathname === '/api/telemetry') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
     } else {

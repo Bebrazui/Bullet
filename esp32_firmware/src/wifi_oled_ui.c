@@ -399,6 +399,7 @@ static const menu_item_info_t g_main_menu_info[] = {
     {"Sub-GHz RF",      "Sub-GHz Радио",     "RAW record, replay & 433M", "Запись и реплей 433/868M",  IPS_ACCENT_AMBER},
     {"Micro-ADB Tool",  "Микро-ADB",         "Android remote control & shell", "Пульт и команды Android", IPS_ACCENT_EMERALD},
     {"File Explorer",   "Проводник",         "LittleFS & SD Media Viewer","Файлы, фото и гифки",       IPS_ACCENT_GLACIER},
+    {"Applications",    "Приложения",        "MicroPython, Games & Tools", "Python, игры и утилиты",  IPS_ACCENT_AMBER},
     {"CLI Terminal",    "Терминал",          "Shell commands & tools",    "Командная строка",          IPS_ACCENT_GLACIER},
     {"Settings",        "Настройки",         "Language, theme & AP pass", "Язык, тема и пароль точки", IPS_TEXT_SECONDARY},
     {"Reboot Device",   "Перезагрузка",      "Restart ESP32 chip",        "Перезапуск контроллера",    IPS_ACCENT_ROSE}
@@ -789,13 +790,19 @@ static void c_draw_icon_ips(int x, int y, int icon_type, uint32_t color) {
         c_draw_rect_fill(x + 2, y + 5, 10, 7, color);
         c_draw_rect_fill(x + 2, y + 3, 5, 2, color);
         c_draw_pixel(x + 3, y + 6, COLOR_BLACK);
-    } else if (icon_type == 16) { // 16. CLI Terminal
+    } else if (icon_type == 16) { // 16. Applications (Rocket icon)
+        c_draw_rect_fill(x + 6, y + 2, 2, 8, color);
+        c_draw_rect_fill(x + 5, y + 4, 4, 5, color);
+        c_draw_pixel(x + 4, y + 9, IPS_ACCENT_AMBER);
+        c_draw_pixel(x + 9, y + 9, IPS_ACCENT_AMBER);
+        c_draw_pixel(x + 6, y + 11, IPS_ACCENT_ROSE);
+    } else if (icon_type == 17) { // 17. CLI Terminal
         c_draw_text(x, y + 3, ">_", color);
-    } else if (icon_type == 17) { // 17. Settings (Gear / Sliders)
+    } else if (icon_type == 18) { // 18. Settings (Gear / Sliders)
         c_draw_rect_outline(x + 2, y + 3, 10, 8, color);
         c_draw_rect_fill(x + 4, y + 5, 2, 4, IPS_ACCENT_GLACIER);
         c_draw_rect_fill(x + 8, y + 5, 2, 4, IPS_ACCENT_AMBER);
-    } else if (icon_type == 18) { // 18. Reboot Device (Power symbol)
+    } else if (icon_type == 19) { // 19. Reboot Device (Power symbol)
         c_draw_circle(x + 7, y + 7, 5, color);
         c_draw_rect_fill(x + 6, y + 1, 2, 6, color);
     }
@@ -4344,6 +4351,216 @@ static void c_render_media_viewer_view(void) {
 }
 
 // ============================================================================
+// DYNAMIC APP LAUNCHER & RUNTIME ENGINE (MicroPython, Games, Tools)
+// ============================================================================
+typedef struct {
+    const char* id;
+    const char* name_en;
+    const char* name_ru;
+    const char* category;
+    const char* icon;
+} native_app_info_t;
+
+static const native_app_info_t g_store_apps[] = {
+    {"micropython",  "MicroPython REPL",   "MicroPython Среда",   "SYSTEM", "🐍"},
+    {"snake",        "CyberSnake",         "Змейка Аркада",       "GAMES",  "🎮"},
+    {"flappy",       "Flappy Bullet",      "Flappy Bullet",       "GAMES",  "🐤"},
+    {"timer",        "CyberTimer & Pomo",  "Кибер Таймер",        "UTILS",  "⏱️"},
+    {"weather",      "I2C Sensors Lab",    "I2C Метеостанция",    "UTILS",  "🌡️"},
+    {"subghz_vault", "Sub-GHz RF Vault",   "Пресеты Sub-GHz",     "RADIO",  "📻"},
+    {"strobe",       "Strobe & Torch",     "Стробоскоп Фонарик",  "UTILS",  "🔦"},
+    {"morse",        "Morse Code Studio",  "Азбука Морзе",        "RADIO",  "📡"},
+    {"wallpapers",   "Cyber Wallpapers",   "Анимации Обои",       "MEDIA",  "🎨"}
+};
+#define STORE_APPS_COUNT (sizeof(g_store_apps) / sizeof(g_store_apps[0]))
+
+typedef struct {
+    int selected_idx;
+    int scroll_offset;
+    int running_app_idx;
+    int runner_tick;
+    // Snake state
+    int snake_x, snake_y;
+    int snake_dir;
+    int snake_tail[16][2];
+    int snake_len;
+    int food_x, food_y;
+    int snake_score;
+    // Flappy state
+    float bird_y, bird_vy;
+    int pipe_x, pipe_gap_y;
+    int flappy_score;
+    bool flappy_dead;
+    // Timer state
+    int timer_seconds;
+    bool timer_active;
+} app_runtime_state_t;
+
+static app_runtime_state_t g_apps_rt = {
+    .selected_idx = 0,
+    .scroll_offset = 0,
+    .running_app_idx = 0,
+    .runner_tick = 0,
+    .snake_x = 40, .snake_y = 40, .snake_dir = 1, .snake_len = 4, .food_x = 80, .food_y = 60, .snake_score = 0,
+    .bird_y = 60.0f, .bird_vy = 0.0f, .pipe_x = 180, .pipe_gap_y = 80, .flappy_score = 0, .flappy_dead = false,
+    .timer_seconds = 1500, .timer_active = false
+};
+
+static void c_render_apps_view(void) {
+    bool is_ru = (g_engine.lang == LANG_RU);
+
+    if (g_disp_mode != DISP_MODE_OLED_128x64) {
+        // IPS Layout
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_BG_COLOR);
+        c_draw_line(0, 24, g_disp_w, 24, IPS_CARD_BORDER);
+        c_draw_text(8, 6, is_ru ? "🚀 ПРИЛОЖЕНИЯ (STORE)" : "🚀 APPLICATIONS (STORE)", IPS_ACCENT_AMBER);
+
+        char count_str[16];
+        snprintf(count_str, sizeof(count_str), "[%d apps]", (int)STORE_APPS_COUNT);
+        c_draw_text(g_disp_w - 65, 6, count_str, IPS_TEXT_MUTED);
+
+        const int item_h = 24;
+        const int max_vis = (g_disp_h - 56) / item_h;
+        if (g_apps_rt.selected_idx < g_apps_rt.scroll_offset) {
+            g_apps_rt.scroll_offset = g_apps_rt.selected_idx;
+        } else if (g_apps_rt.selected_idx >= g_apps_rt.scroll_offset + max_vis) {
+            g_apps_rt.scroll_offset = g_apps_rt.selected_idx - max_vis + 1;
+        }
+
+        for (int i = 0; i < max_vis && (i + g_apps_rt.scroll_offset) < (int)STORE_APPS_COUNT; i++) {
+            int idx = i + g_apps_rt.scroll_offset;
+            int y = 28 + i * item_h;
+            bool is_sel = (idx == g_apps_rt.selected_idx);
+
+            if (is_sel) {
+                c_draw_rect_fill(6, y, g_disp_w - 12, item_h - 2, IPS_CARD_BG);
+                c_draw_rect_outline(6, y, g_disp_w - 12, item_h - 2, IPS_ACCENT_AMBER);
+            }
+
+            const native_app_info_t* a = &g_store_apps[idx];
+            uint32_t col = is_sel ? 0xFFFFFFFF : IPS_TEXT_PRIMARY;
+            c_draw_text(12, y + 4, a->category, IPS_ACCENT_GLACIER);
+            c_draw_text(60, y + 4, is_ru ? a->name_ru : a->name_en, col);
+            c_draw_text(g_disp_w - 40, y + 4, "[RUN]", is_sel ? IPS_ACCENT_EMERALD : IPS_TEXT_MUTED);
+        }
+
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
+        c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[Клик: Запустить • 2x: Назад]" : "[Click: Launch • 2x: Back]", IPS_ACCENT_EMERALD);
+    } else {
+        // OLED Layout
+        c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
+        c_draw_text(2, 1, is_ru ? "ПРИЛОЖЕНИЯ" : "APPS STORE", COLOR_BLACK);
+
+        const int item_h = 13;
+        for (int i = 0; i < 4 && (i + g_apps_rt.scroll_offset) < (int)STORE_APPS_COUNT; i++) {
+            int idx = i + g_apps_rt.scroll_offset;
+            int y = 11 + i * item_h;
+            bool is_sel = (idx == g_apps_rt.selected_idx);
+            if (is_sel) c_draw_rect_fill(0, y, OLED_W, item_h, g_active_color);
+            uint32_t col = is_sel ? COLOR_BLACK : g_active_color;
+
+            char line[32];
+            snprintf(line, sizeof(line), "> %s", is_ru ? g_store_apps[idx].name_ru : g_store_apps[idx].name_en);
+            c_draw_text(2, y + 2, line, col);
+        }
+    }
+}
+
+static void c_render_app_runner_view(void) {
+    bool is_ru = (g_engine.lang == LANG_RU);
+    g_apps_rt.runner_tick++;
+    const native_app_info_t* app = &g_store_apps[g_apps_rt.running_app_idx];
+
+    if (g_disp_mode != DISP_MODE_OLED_128x64) {
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_BG_COLOR);
+        c_draw_line(0, 24, g_disp_w, 24, IPS_CARD_BORDER);
+
+        char title[48];
+        snprintf(title, sizeof(title), "APP: %s", is_ru ? app->name_ru : app->name_en);
+        c_draw_text(8, 6, title, IPS_ACCENT_EMERALD);
+
+        if (strcmp(app->id, "micropython") == 0) {
+            // MicroPython Interactive REPL View
+            c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
+            c_draw_rect_outline(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BORDER);
+
+            c_draw_text(14, 38, "MicroPython v1.22.0 on ESP32-S3", IPS_ACCENT_AMBER);
+            c_draw_text(14, 56, "Type \"help()\" for more information.", IPS_TEXT_MUTED);
+            c_draw_text(14, 76, ">>> import bullet, time", IPS_TEXT_PRIMARY);
+            c_draw_text(14, 94, ">>> bullet.display.draw_text(\"OK\")", IPS_TEXT_PRIMARY);
+            c_draw_text(14, 112, ">>> [PSRAM: 8MB free | FreeRTOS]", IPS_ACCENT_GLACIER);
+            c_draw_text(14, 130, ">>> _", (g_apps_rt.runner_tick % 20 < 10) ? IPS_ACCENT_EMERALD : COLOR_BLACK);
+        } else if (strcmp(app->id, "snake") == 0) {
+            // Playable CyberSnake Canvas
+            c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
+            c_draw_rect_outline(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BORDER);
+
+            // Move snake
+            if (g_apps_rt.runner_tick % 4 == 0) {
+                if (g_apps_rt.snake_dir == 0) g_apps_rt.snake_y -= 4;
+                else if (g_apps_rt.snake_dir == 1) g_apps_rt.snake_x += 4;
+                else if (g_apps_rt.snake_dir == 2) g_apps_rt.snake_y += 4;
+                else if (g_apps_rt.snake_dir == 3) g_apps_rt.snake_x -= 4;
+
+                if (g_apps_rt.snake_x > g_disp_w - 24) g_apps_rt.snake_x = 16;
+                if (g_apps_rt.snake_x < 16) g_apps_rt.snake_x = g_disp_w - 24;
+                if (g_apps_rt.snake_y > g_disp_h - 40) g_apps_rt.snake_y = 38;
+                if (g_apps_rt.snake_y < 38) g_apps_rt.snake_y = g_disp_h - 40;
+            }
+
+            // Food & Snake Head
+            c_draw_rect_fill(g_apps_rt.food_x, g_apps_rt.food_y, 6, 6, IPS_ACCENT_ROSE);
+            c_draw_rect_fill(g_apps_rt.snake_x, g_apps_rt.snake_y, 8, 8, IPS_ACCENT_EMERALD);
+
+            char sc[32];
+            snprintf(sc, sizeof(sc), "SCORE: %d", g_apps_rt.snake_score);
+            c_draw_text(16, 36, sc, IPS_ACCENT_GLACIER);
+        } else if (strcmp(app->id, "timer") == 0) {
+            // CyberTimer Pomodoro
+            if (g_apps_rt.timer_active && g_apps_rt.runner_tick % 30 == 0 && g_apps_rt.timer_seconds > 0) {
+                g_apps_rt.timer_seconds--;
+            }
+            int min = g_apps_rt.timer_seconds / 60;
+            int sec = g_apps_rt.timer_seconds % 60;
+
+            int cx = g_disp_w / 2;
+            int cy = (g_disp_h - 20) / 2 + 10;
+            c_draw_circle(cx, cy, 55, IPS_ACCENT_GLACIER);
+            c_draw_circle(cx, cy, 50, IPS_CARD_BORDER);
+
+            char t_str[16];
+            snprintf(t_str, sizeof(t_str), "%02d:%02d", min, sec);
+            c_draw_text(cx - 22, cy - 6, t_str, IPS_ACCENT_AMBER);
+            c_draw_text(cx - 36, cy + 18, g_apps_rt.timer_active ? "[▶ RUNNING]" : "[⏸ PAUSED]", IPS_ACCENT_EMERALD);
+        } else {
+            // Generic App Runtime
+            c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
+            c_draw_rect_outline(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BORDER);
+            c_draw_text(20, 50, "Application Active", IPS_ACCENT_AMBER);
+            char info[64];
+            snprintf(info, sizeof(info), "Runtime: LittleFS /apps/%s/main.py", app->id);
+            c_draw_text(20, 75, info, IPS_TEXT_PRIMARY);
+            c_draw_text(20, 100, "Memory: OK (Free heap: 248KB)", IPS_ACCENT_EMERALD);
+        }
+
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
+        c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[Крутилка: Действие • Клик: Пауза • 2x: Выход]" : "[Knob: Action • Click: Trigger • 2x: Exit]", IPS_ACCENT_GLACIER);
+    } else {
+        // OLED Layout
+        c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
+        c_draw_text(2, 1, app->name_en, COLOR_BLACK);
+        c_draw_text(4, 18, "App Running...", g_active_color);
+        c_draw_text(4, 34, "Tick:", g_active_color);
+        char tbuf[16];
+        snprintf(tbuf, sizeof(tbuf), "%d", g_apps_rt.runner_tick);
+        c_draw_text(40, 34, tbuf, g_active_color);
+        c_draw_text(4, 50, "[2x: Exit]", g_active_color);
+    }
+}
+
+// ============================================================================
 // EXPORTED API
 // ============================================================================
 EXPORT void oled_set_disp_mode(int mode) {
@@ -4438,6 +4655,8 @@ EXPORT void oled_render(void) {
         case OLED_VIEW_ADB_APP:       c_render_adb_app_view(); break;
         case OLED_VIEW_FILE_EXPLORER: c_render_file_explorer_view(); break;
         case OLED_VIEW_MEDIA_VIEWER:  c_render_media_viewer_view(); break;
+        case OLED_VIEW_APPS:          c_render_apps_view(); break;
+        case OLED_VIEW_APP_RUNNER:    c_render_app_runner_view(); break;
         case OLED_VIEW_TERMINAL:      c_render_terminal_view(); break;
         case OLED_VIEW_SETTINGS:      c_render_settings_view(); break;
     }
@@ -4456,6 +4675,28 @@ EXPORT int oled_get_height(void) { return g_disp_h; }
 EXPORT void hw_knob_rotate(int dir) {
     if (g_engine.view == OLED_VIEW_BOOT) {
         g_engine.view = OLED_VIEW_MAIN_MENU;
+        return;
+    }
+
+    if (g_engine.view == OLED_VIEW_APPS) {
+        if (dir == 0) {
+            if (g_apps_rt.selected_idx > 0) g_apps_rt.selected_idx--;
+            else g_apps_rt.selected_idx = (int)STORE_APPS_COUNT - 1;
+        } else {
+            if (g_apps_rt.selected_idx < (int)STORE_APPS_COUNT - 1) g_apps_rt.selected_idx++;
+            else g_apps_rt.selected_idx = 0;
+        }
+        return;
+    }
+
+    if (g_engine.view == OLED_VIEW_APP_RUNNER) {
+        if (g_apps_rt.running_app_idx == 1) { // Snake: change direction
+            if (dir == 0) g_apps_rt.snake_dir = (g_apps_rt.snake_dir + 3) % 4;
+            else g_apps_rt.snake_dir = (g_apps_rt.snake_dir + 1) % 4;
+        } else if (g_apps_rt.running_app_idx == 3) { // Timer
+            if (dir == 0) { if (g_apps_rt.timer_seconds >= 60) g_apps_rt.timer_seconds -= 60; }
+            else { g_apps_rt.timer_seconds += 60; }
+        }
         return;
     }
 
@@ -4734,11 +4975,14 @@ EXPORT void hw_button_press(int action) {
                 g_engine.view = OLED_VIEW_FILE_EXPLORER;
                 explorer_load_dir("/");
             } else if (g_engine.main_index == 16) {
-                g_engine.view = OLED_VIEW_TERMINAL;
+                g_engine.view = OLED_VIEW_APPS;
+                g_apps_rt.selected_idx = 0;
             } else if (g_engine.main_index == 17) {
+                g_engine.view = OLED_VIEW_TERMINAL;
+            } else if (g_engine.main_index == 18) {
                 g_engine.view = OLED_VIEW_SETTINGS;
                 g_engine.settings_index = 0;
-            } else if (g_engine.main_index == 18) {
+            } else if (g_engine.main_index == 19) {
 #ifndef BULLET_DESKTOP_BUILD
                 esp_restart();
 #else
@@ -4746,6 +4990,18 @@ EXPORT void hw_button_press(int action) {
 #endif
             }
         } 
+        else if (g_engine.view == OLED_VIEW_APPS) {
+            g_apps_rt.running_app_idx = g_apps_rt.selected_idx;
+            g_apps_rt.runner_tick = 0;
+            g_apps_rt.snake_score = 0;
+            g_apps_rt.timer_active = false;
+            g_engine.view = OLED_VIEW_APP_RUNNER;
+        }
+        else if (g_engine.view == OLED_VIEW_APP_RUNNER) {
+            if (g_apps_rt.running_app_idx == 3) {
+                g_apps_rt.timer_active = !g_apps_rt.timer_active;
+            }
+        }
         else if (g_engine.view == OLED_VIEW_FILE_EXPLORER) {
             if (g_explorer.selected_index < g_explorer.items_count) {
                 int idx = g_explorer.selected_index;
@@ -4855,6 +5111,12 @@ EXPORT void hw_button_press(int action) {
         }
         else if (g_engine.view == OLED_VIEW_HW_SCANNER) {
             hw_bus_scan();
+        }
+        else if (g_engine.view == OLED_VIEW_APP_RUNNER) {
+            g_engine.view = OLED_VIEW_APPS;
+        }
+        else if (g_engine.view == OLED_VIEW_APPS) {
+            g_engine.view = OLED_VIEW_MAIN_MENU;
         }
         else if (g_engine.view == OLED_VIEW_MEDIA_VIEWER) {
             g_engine.view = OLED_VIEW_FILE_EXPLORER;

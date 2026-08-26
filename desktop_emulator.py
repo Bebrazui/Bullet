@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import subprocess
 import time
@@ -222,9 +222,9 @@ class BulletOSEmulatorApp:
         self.cmd_entry.delete(0, tk.END)
         if self.sock:
             try:
+                self.sock.sendall(f"PYTHON {text}\n".encode())
                 for char in text:
                     self.sock.sendall(f"CHAR {ord(char)}\n".encode())
-                    time.sleep(0.01)
                 self.sock.sendall(b"CHAR 10\n") # Enter
             except Exception:
                 pass

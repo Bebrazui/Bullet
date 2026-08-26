@@ -93,6 +93,42 @@ function checkRealAdbDevice() {
 // Periodically probe for real devices every 3 seconds
 setInterval(checkRealAdbDevice, 3000);
 
+function executePythonCode(code) {
+    if (!code || !isReady) return;
+    const clean = code.replace(/^>>>\s*/, '').trim();
+    if (!clean) return;
+
+    const pyExe = process.platform === 'win32' ? 'python' : 'python3';
+    const pyCmd = `"${pyExe}" -c "import sys, math, os;
+try:
+    _res = eval(${JSON.stringify(clean)})
+    if _res is not None: print(repr(_res))
+except Exception:
+    try:
+        exec(${JSON.stringify(clean)})
+    except Exception as _e:
+        print(f'{type(_e).__name__}: {_e}')"`;
+
+    exec(pyCmd, { timeout: 4000 }, (err, stdout, stderr) => {
+        let out = (stdout || (stderr || (err ? err.message.split('\n')[0] : ''))).trim();
+        if (!out) out = 'OK';
+        if (Module._wifi_ui_mpy_eval_output) {
+            const inBytes = Buffer.from(clean + '\0', 'utf8');
+            const inPtr = Module._malloc(inBytes.length);
+            Module.HEAPU8.set(inBytes, inPtr);
+
+            const outBytes = Buffer.from(out.substring(0, 46) + '\0', 'utf8');
+            const outPtr = Module._malloc(outBytes.length);
+            Module.HEAPU8.set(outBytes, outPtr);
+
+            Module._wifi_ui_mpy_eval_output(inPtr, outPtr);
+
+            Module._free(inPtr);
+            Module._free(outPtr);
+        }
+    });
+}
+
 const server = net.createServer((socket) => {
     socket.on('error', (err) => {});
 
@@ -105,7 +141,10 @@ const server = net.createServer((socket) => {
             const parts = line.trim().split(' ');
             const cmd = parts[0];
 
-            if (cmd === 'KNOB') {
+            if (cmd === 'PYTHON' || cmd === 'EVAL') {
+                const pyCode = line.substring(cmd.length + 1).trim();
+                executePythonCode(pyCode);
+            } else if (cmd === 'KNOB') {
                 const dir = parseInt(parts[1], 10);
                 Module._hw_knob_rotate(dir);
             } else if (cmd === 'BTN') {

@@ -4375,10 +4375,45 @@ static const native_app_info_t g_store_apps[] = {
     {"weather",      "I2C Sensors Lab",    "I2C Метеостанция",    "UTILS",  "🌡️"},
     {"subghz_vault", "Sub-GHz RF Vault",   "Пресеты Sub-GHz",     "RADIO",  "📻"},
     {"strobe",       "Strobe & Torch",     "Стробоскоп Фонарик",  "UTILS",  "🔦"},
-    {"morse",        "Morse Code Studio",  "Азбука Морзе",        "RADIO",  "📡"},
     {"wallpapers",   "Cyber Wallpapers",   "Анимации Обои",       "MEDIA",  "🎨"}
 };
 #define STORE_APPS_COUNT (sizeof(g_store_apps) / sizeof(g_store_apps[0]))
+
+#define MPY_LINES_MAX 7
+static char g_mpy_history[MPY_LINES_MAX][48] = {
+    "MicroPython v1.22.0 on ESP32-S3",
+    "Type \"help()\" for info. REPL live.",
+    ">>> import os",
+    "['apps', 'config', 'logs', 'subghz']",
+    ">>> 2 + 2",
+    "4",
+    ">>> _"
+};
+static int g_mpy_history_count = 6;
+
+EXPORT void wifi_ui_mpy_eval_output(const char* input_cmd, const char* result_out) {
+    if (input_cmd && strlen(input_cmd) > 0) {
+        if (g_mpy_history_count >= MPY_LINES_MAX - 1) {
+            for (int i = 0; i < MPY_LINES_MAX - 2; i++) {
+                strncpy(g_mpy_history[i], g_mpy_history[i + 1], 47);
+                g_mpy_history[i][47] = '\0';
+            }
+            g_mpy_history_count = MPY_LINES_MAX - 2;
+        }
+        snprintf(g_mpy_history[g_mpy_history_count++], 47, ">>> %s", input_cmd);
+    }
+
+    if (result_out && strlen(result_out) > 0) {
+        if (g_mpy_history_count >= MPY_LINES_MAX - 1) {
+            for (int i = 0; i < MPY_LINES_MAX - 2; i++) {
+                strncpy(g_mpy_history[i], g_mpy_history[i + 1], 47);
+                g_mpy_history[i][47] = '\0';
+            }
+            g_mpy_history_count = MPY_LINES_MAX - 2;
+        }
+        snprintf(g_mpy_history[g_mpy_history_count++], 47, "%s", result_out);
+    }
+}
 
 typedef struct {
     int selected_idx;
@@ -4491,12 +4526,17 @@ static void c_render_app_runner_view(void) {
             c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
             c_draw_rect_outline(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BORDER);
 
-            c_draw_text(14, 38, "MicroPython v1.22.0 on ESP32-S3", IPS_ACCENT_AMBER);
-            c_draw_text(14, 56, "Type \"help()\" for more information.", IPS_TEXT_MUTED);
-            c_draw_text(14, 76, ">>> import bullet, time", IPS_TEXT_PRIMARY);
-            c_draw_text(14, 94, ">>> bullet.display.draw_text(\"OK\")", IPS_TEXT_PRIMARY);
-            c_draw_text(14, 112, ">>> [PSRAM: 8MB free | FreeRTOS]", IPS_ACCENT_GLACIER);
-            c_draw_text(14, 130, ">>> _", (g_apps_rt.runner_tick % 20 < 10) ? IPS_ACCENT_EMERALD : COLOR_BLACK);
+            int start_y = 38;
+            int max_show = (g_disp_h > 240) ? 9 : 6;
+            for (int i = 0; i < g_mpy_history_count && i < max_show; i++) {
+                uint32_t col = (i == 0) ? IPS_ACCENT_AMBER : ((strstr(g_mpy_history[i], ">>>")) ? IPS_TEXT_PRIMARY : IPS_ACCENT_EMERALD);
+                c_draw_text(14, start_y + i * 18, g_mpy_history[i], col);
+            }
+            if (g_mpy_history_count < max_show) {
+                char blink[16];
+                snprintf(blink, sizeof(blink), ">>> %s", (g_apps_rt.runner_tick % 20 < 10) ? "_" : " ");
+                c_draw_text(14, start_y + g_mpy_history_count * 18, blink, IPS_ACCENT_GLACIER);
+            }
         } else if (strcmp(app->id, "snake") == 0) {
             // Playable CyberSnake Canvas
             c_draw_rect_fill(8, 30, g_disp_w - 16, g_disp_h - 60, IPS_CARD_BG);
@@ -5118,7 +5158,13 @@ EXPORT void hw_button_press(int action) {
         else if (g_engine.view == OLED_VIEW_HW_SCANNER) {
             hw_bus_scan();
         }
-        else if (g_engine.view == OLED_VIEW_APP_RUNNER) {
+    }
+
+    // ========================================================================
+    // BACK / ESC / DOUBLE-CLICK ACTION (action == 2 or 1)
+    // ========================================================================
+    if (action == 2 || action == 1) {
+        if (g_engine.view == OLED_VIEW_APP_RUNNER) {
             g_engine.view = OLED_VIEW_APPS;
         }
         else if (g_engine.view == OLED_VIEW_APPS) {
@@ -5134,11 +5180,20 @@ EXPORT void hw_button_press(int action) {
                 g_engine.view = OLED_VIEW_MAIN_MENU;
             }
         }
-        else if (g_engine.view == OLED_VIEW_STATUS || g_engine.view == OLED_VIEW_AP_MODE || 
-                 g_engine.view == OLED_VIEW_SYS_INFO || g_engine.view == OLED_VIEW_SNIFFER ||
-                 g_engine.view == OLED_VIEW_BLE_RADAR || g_engine.view == OLED_VIEW_FFT_SPECTRUM ||
-                 g_engine.view == OLED_VIEW_DEAUTH_IDS || g_engine.view == OLED_VIEW_PROBE_SNIFFER ||
-                 g_engine.view == OLED_VIEW_MATRIX_RAIN || g_engine.view == OLED_VIEW_TERMINAL) {
+        else if (g_engine.view == OLED_VIEW_NETWORKS_LIST) {
+            g_engine.view = OLED_VIEW_WIFI_MENU;
+        }
+        else if (g_engine.view == OLED_VIEW_WIFI_MENU) {
+            g_engine.view = OLED_VIEW_MAIN_MENU;
+        }
+        else if (g_engine.view == OLED_VIEW_SUBGHZ) {
+            if (g_subghz.page != SUBGHZ_PAGE_MENU) {
+                g_subghz.page = SUBGHZ_PAGE_MENU;
+            } else {
+                g_engine.view = OLED_VIEW_MAIN_MENU;
+            }
+        }
+        else if (g_engine.view != OLED_VIEW_MAIN_MENU) {
             g_engine.view = OLED_VIEW_MAIN_MENU;
         }
     }

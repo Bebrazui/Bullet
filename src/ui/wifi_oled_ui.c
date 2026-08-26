@@ -4485,6 +4485,28 @@ static void c_render_apps_view(void) {
     bool is_ru = (g_engine.lang == LANG_RU);
 
     if (g_apps_rt.is_downloading) {
+        g_apps_rt.runner_tick++;
+
+        // Live download progress ticker
+        if (g_apps_rt.download_progress < 100) {
+            if (g_apps_rt.runner_tick % 2 == 0) {
+                g_apps_rt.download_progress += 2;
+                if (g_apps_rt.download_progress == 30) {
+                    snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "GET %s/main.py", g_store_apps[g_apps_rt.downloading_app_idx].id);
+                } else if (g_apps_rt.download_progress == 60) {
+                    snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "Writing /apps/%s/", g_store_apps[g_apps_rt.downloading_app_idx].id);
+                } else if (g_apps_rt.download_progress == 85) {
+                    snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "LittleFS sync...");
+                }
+            }
+            if (g_apps_rt.download_progress >= 100) {
+                g_apps_rt.download_progress = 100;
+                g_apps_rt.is_downloading = false;
+                g_apps_rt.is_installed[g_apps_rt.downloading_app_idx] = true;
+                snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "Installed OK!");
+            }
+        }
+
         // Active GitHub Downloader HUD
         c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
         c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_CARD_BG);

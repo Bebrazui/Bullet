@@ -4420,6 +4420,12 @@ typedef struct {
     int scroll_offset;
     int running_app_idx;
     int runner_tick;
+    // App install & download state
+    bool is_installed[12];
+    bool is_downloading;
+    int  downloading_app_idx;
+    int  download_progress; // 0 - 100
+    char download_status[48];
     // Snake state
     int snake_x, snake_y;
     int snake_dir;
@@ -4442,13 +4448,75 @@ static app_runtime_state_t g_apps_rt = {
     .scroll_offset = 0,
     .running_app_idx = 0,
     .runner_tick = 0,
+    .is_installed = { false },
+    .is_downloading = false,
+    .downloading_app_idx = 0,
+    .download_progress = 0,
+    .download_status = "Connecting...",
     .snake_x = 40, .snake_y = 40, .snake_dir = 1, .snake_len = 4, .food_x = 80, .food_y = 60, .snake_score = 0,
     .bird_y = 60.0f, .bird_vy = 0.0f, .pipe_x = 180, .pipe_gap_y = 80, .flappy_score = 0, .flappy_dead = false,
     .timer_seconds = 1500, .timer_active = false
 };
 
+EXPORT void wifi_ui_set_app_installed(int app_idx, bool installed) {
+    if (app_idx >= 0 && app_idx < 12) {
+        g_apps_rt.is_installed[app_idx] = installed;
+    }
+}
+
+EXPORT void wifi_ui_set_download_progress(int app_idx, int progress, const char* status_msg) {
+    g_apps_rt.downloading_app_idx = app_idx;
+    g_apps_rt.download_progress = progress;
+    if (status_msg) {
+        strncpy(g_apps_rt.download_status, status_msg, sizeof(g_apps_rt.download_status) - 1);
+        g_apps_rt.download_status[sizeof(g_apps_rt.download_status) - 1] = '\0';
+    }
+    if (progress >= 100) {
+        g_apps_rt.is_downloading = false;
+        if (app_idx >= 0 && app_idx < 12) {
+            g_apps_rt.is_installed[app_idx] = true;
+        }
+    } else {
+        g_apps_rt.is_downloading = true;
+    }
+}
+
 static void c_render_apps_view(void) {
     bool is_ru = (g_engine.lang == LANG_RU);
+
+    if (g_apps_rt.is_downloading) {
+        // Active GitHub Downloader HUD
+        c_draw_rect_fill(0, 0, g_disp_w, g_disp_h, IPS_BG_COLOR);
+        c_draw_rect_fill(0, 0, g_disp_w, 24, IPS_CARD_BG);
+        c_draw_text(8, 6, is_ru ? "📥 ЗАГРУЗКА ИЗ GITHUB" : "📥 GITHUB APP DOWNLOAD", IPS_ACCENT_AMBER);
+
+        c_draw_rect_fill(10, 36, g_disp_w - 20, g_disp_h - 70, IPS_CARD_BG);
+        c_draw_rect_outline(10, 36, g_disp_w - 20, g_disp_h - 70, IPS_CARD_BORDER);
+
+        const native_app_info_t* app = &g_store_apps[g_apps_rt.downloading_app_idx];
+        char app_title[48];
+        snprintf(app_title, sizeof(app_title), "App: %s", app->id);
+        c_draw_text(18, 48, app_title, IPS_ACCENT_EMERALD);
+
+        c_draw_text(18, 70, "Source: raw.githubusercontent.com", IPS_TEXT_MUTED);
+        c_draw_text(18, 92, g_apps_rt.download_status, IPS_TEXT_PRIMARY);
+
+        // Progress Bar
+        int bar_w = g_disp_w - 56;
+        c_draw_rect_fill(18, 118, bar_w, 10, 0xFF1E293B);
+        int fill_w = (g_apps_rt.download_progress * bar_w) / 100;
+        if (fill_w > bar_w) fill_w = bar_w;
+        c_draw_rect_fill(18, 118, fill_w, 10, IPS_ACCENT_GLACIER);
+
+        char pct[32];
+        snprintf(pct, sizeof(pct), "Progress: %d%%", g_apps_rt.download_progress);
+        c_draw_text(18, 136, pct, IPS_ACCENT_AMBER);
+
+        c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
+        c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[ESC: Отмена загрузки]" : "[ESC: Cancel Download]", IPS_ACCENT_ROSE);
+        return;
+    }
 
     if (g_disp_mode != DISP_MODE_OLED_128x64) {
         // IPS Layout
@@ -4472,22 +4540,23 @@ static void c_render_apps_view(void) {
             int idx = i + g_apps_rt.scroll_offset;
             int y = 28 + i * item_h;
             bool is_sel = (idx == g_apps_rt.selected_idx);
+            bool is_inst = g_apps_rt.is_installed[idx];
 
             if (is_sel) {
                 c_draw_rect_fill(6, y, g_disp_w - 12, item_h - 2, IPS_CARD_BG);
-                c_draw_rect_outline(6, y, g_disp_w - 12, item_h - 2, IPS_ACCENT_AMBER);
+                c_draw_rect_outline(6, y, g_disp_w - 12, item_h - 2, is_inst ? IPS_ACCENT_EMERALD : IPS_ACCENT_AMBER);
             }
 
             const native_app_info_t* a = &g_store_apps[idx];
             uint32_t col = is_sel ? 0xFFFFFFFF : IPS_TEXT_PRIMARY;
-            c_draw_text(12, y + 4, a->category, IPS_ACCENT_GLACIER);
+            c_draw_text(12, y + 4, a->category, is_inst ? IPS_ACCENT_EMERALD : IPS_ACCENT_GLACIER);
             c_draw_text(60, y + 4, is_ru ? a->name_ru : a->name_en, col);
-            c_draw_text(g_disp_w - 40, y + 4, "[RUN]", is_sel ? IPS_ACCENT_EMERALD : IPS_TEXT_MUTED);
+            c_draw_text(g_disp_w - 40, y + 4, is_inst ? "[RUN]" : "[GET]", is_inst ? (is_sel ? IPS_ACCENT_EMERALD : IPS_TEXT_MUTED) : (is_sel ? IPS_ACCENT_AMBER : IPS_TEXT_SECONDARY));
         }
 
         c_draw_rect_fill(0, g_disp_h - 22, g_disp_w, 22, IPS_BG_COLOR);
         c_draw_line(0, g_disp_h - 22, g_disp_w, g_disp_h - 22, IPS_CARD_BORDER);
-        c_draw_text(8, g_disp_h - 16, is_ru ? "[Клик: Запустить • 2x: Назад]" : "[Click: Launch • 2x: Back]", IPS_ACCENT_EMERALD);
+        c_draw_text(8, g_disp_h - 16, is_ru ? "[Клик: Скачать/Запуск • 2x: Назад]" : "[Click: Get/Run • 2x: Back]", IPS_ACCENT_EMERALD);
     } else {
         // OLED Layout
         c_draw_rect_fill(0, 0, OLED_W, 9, g_active_color);
@@ -5037,11 +5106,20 @@ EXPORT void hw_button_press(int action) {
             }
         } 
         else if (g_engine.view == OLED_VIEW_APPS) {
-            g_apps_rt.running_app_idx = g_apps_rt.selected_idx;
-            g_apps_rt.runner_tick = 0;
-            g_apps_rt.snake_score = 0;
-            g_apps_rt.timer_active = false;
-            g_engine.view = OLED_VIEW_APP_RUNNER;
+            if (g_apps_rt.is_downloading) return;
+            int idx = g_apps_rt.selected_idx;
+            if (!g_apps_rt.is_installed[idx]) {
+                g_apps_rt.is_downloading = true;
+                g_apps_rt.downloading_app_idx = idx;
+                g_apps_rt.download_progress = 20;
+                snprintf(g_apps_rt.download_status, sizeof(g_apps_rt.download_status), "GET %s/main.py", g_store_apps[idx].id);
+            } else {
+                g_apps_rt.running_app_idx = idx;
+                g_apps_rt.runner_tick = 0;
+                g_apps_rt.snake_score = 0;
+                g_apps_rt.timer_active = false;
+                g_engine.view = OLED_VIEW_APP_RUNNER;
+            }
         }
         else if (g_engine.view == OLED_VIEW_APP_RUNNER) {
             if (g_apps_rt.running_app_idx == 3) {
@@ -5164,6 +5242,10 @@ EXPORT void hw_button_press(int action) {
     // BACK / ESC / DOUBLE-CLICK ACTION (action == 2 or 1)
     // ========================================================================
     if (action == 2 || action == 1) {
+        if (g_apps_rt.is_downloading) {
+            g_apps_rt.is_downloading = false;
+            return;
+        }
         if (g_engine.view == OLED_VIEW_APP_RUNNER) {
             g_engine.view = OLED_VIEW_APPS;
         }
